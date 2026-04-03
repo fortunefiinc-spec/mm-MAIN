@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MailMate</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;1,9..144,300;1,9..144,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --ink: #18140f;
+  --paper: #f6f1e9;
+  --cream: #ede8de;
+  --warm: #c4a052;
+  --warm2: #a8823a;
+  --warm-pale: #f5edda;
+  --sage: #3d7a52;
+  --muted: #8a8070;
+  --border: #d8d0c4;
+  --white: #fff;
+  --shadow: rgba(24,20,15,0.10);
+  --danger: #c0392b;
+  --font-serif: 'Fraunces', Georgia, serif;
+  --font-mono: 'DM Mono', monospace;
+  --tg-safe-top: env(safe-area-inset-top, 0px);
+  --tg-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Telegram theme sync */
+body {
+  min-height: 100vh;
+  background: var(--tg-theme-bg-color, var(--paper));
+  color: var(--tg-theme-text-color, var(--ink));
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-x: hidden;
+  padding-top: var(--tg-safe-top);
+  padding-bottom: calc(var(--tg-safe-bottom) + 72px);
+}
+
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-thumb { background: var(--warm); border-radius: 2px; }
+
+/* ── SCREENS ── */
+.screen { display: none; padding: 0 16px; padding-top: 16px; animation: fadeUp .25s ease-out; }
+.screen.active { display: block; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+/* ── TOPBAR ── */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(246,241,233,0.94);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 0 -16px 16px;
+}
+.topbar-logo { font-family: var(--font-serif); font-weight: 600; font-size: 18px; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
+.topbar-mark { width: 26px; height: 26px; background: var(--ink); color: var(--paper); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+.topbar-credits { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--warm2); font-family: var(--font-serif); font-weight: 400; }
+.topbar-credits-num { font-size: 16px; font-weight: 300; }
+
+/* ── BOTTOM NAV ── */
+.bottom-nav {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--ink);
+  display: flex;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding-bottom: var(--tg-safe-bottom);
+  z-index: 100;
+}
+.nav-tab {
+  flex: 1; padding: 12px 4px 10px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: none; border: none; cursor: pointer;
+  color: rgba(255,255,255,0.35); font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
+  transition: color .2s;
+}
+.nav-tab.active { color: var(--warm); }
+.nav-tab-icon { font-size: 18px; line-height: 1; }
+
+/* ── CARDS ── */
+.card { background: var(--white); border: 1px solid var(--border); padding: 20px; margin-bottom: 12px; box-shadow: 0 1px 6px var(--shadow); }
+.card-title { font-family: var(--font-serif); font-size: 17px; font-weight: 400; margin-bottom: 4px; }
+.card-sub { font-size: 11px; color: var(--muted); }
+
+/* ── STAT ROW ── */
+.stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.stat-card { background: var(--white); border: 1px solid var(--border); padding: 16px; }
+.stat-card.accent { border-left: 3px solid var(--warm); }
+.stat-num { font-family: var(--font-serif); font-size: 30px; font-weight: 300; line-height: 1; }
+.stat-label { font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-top: 3px; }
+
+/* ── SECTION LABEL ── */
+.section-label { font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--warm2); margin-bottom: 8px; margin-top: 20px; }
+.section-title { font-family: var(--font-serif); font-size: 22px; font-weight: 300; margin-bottom: 6px; }
+.section-title em { font-style: italic; color: var(--warm2); }
+
+/* ── INPUTS ── */
+textarea, input[type=text], input[type=password], input[type=email] {
+  width: 100%; background: var(--white); border: 1px solid var(--border);
+  color: var(--ink); font-family: var(--font-mono); font-size: 13px;
+  line-height: 1.65; padding: 13px 15px; transition: border-color .2s;
+  -webkit-appearance: none; border-radius: 0;
+}
+textarea:focus, input:focus { outline: none; border-color: var(--warm); box-shadow: 0 0 0 3px rgba(196,160,82,0.12); }
+textarea::placeholder, input::placeholder { color: #c0b8ac; }
+textarea { resize: none; }
+textarea.reply-area { border-left: 3px solid var(--warm2); }
+
+/* ── DROP ZONE ── */
+.drop-zone {
+  border: 2px dashed var(--border); background: var(--cream);
+  padding: 24px 16px; text-align: center; cursor: pointer; transition: all .2s;
+  margin-bottom: 12px;
+}
+.drop-zone.over, .drop-zone:active { border-color: var(--warm); background: var(--warm-pale); }
+.drop-zone.loaded { border-color: var(--sage); border-style: solid; background: rgba(61,122,82,0.05); }
+.drop-icon { font-size: 24px; margin-bottom: 8px; opacity: .5; }
+.drop-title { font-family: var(--font-serif); font-size: 15px; margin-bottom: 4px; }
+.drop-sub { font-size: 11px; color: var(--muted); }
+
+/* ── BUTTONS ── */
+.btn {
+  border: none; cursor: pointer; font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 13px 20px; transition: all .2s; display: inline-flex;
+  align-items: center; justify-content: center; gap: 8px; width: 100%;
+  -webkit-tap-highlight-color: transparent; border-radius: 0;
+}
+.btn-primary { background: var(--ink); color: var(--paper); }
+.btn-primary:active { background: var(--warm2); }
+.btn-primary:disabled { opacity: .35; }
+.btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+.btn-ghost:active { border-color: var(--warm); color: var(--warm2); }
+.btn-warm { background: var(--warm); color: var(--ink); font-weight: 500; }
+.btn-warm:active { background: var(--warm2); color: var(--paper); }
+.btn-sm { padding: 9px 14px; font-size: 10px; width: auto; }
+.btn-row { display: flex; gap: 8px; margin-top: 10px; }
+
+/* ── INFO / STRIP ── */
+.info-strip { background: rgba(196,160,82,0.1); border: 1px solid rgba(196,160,82,0.3); border-left: 3px solid var(--warm); padding: 10px 13px; font-size: 12px; color: var(--muted); display: flex; gap: 8px; margin-bottom: 14px; line-height: 1.6; }
+.info-icon { color: var(--warm2); flex-shrink: 0; }
+.disclaimer { border: 1px solid var(--border); padding: 9px 13px; font-size: 11px; color: var(--muted); display: flex; gap: 7px; background: var(--cream); margin-top: 14px; }
+
+/* ── EMPTY / LOADING ── */
+.empty-box { background: var(--cream); border: 2px dashed var(--border); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 7px; min-height: 180px; color: var(--muted); font-size: 12px; text-align: center; line-height: 1.8; padding: 20px; }
+.empty-icon { font-size: 24px; opacity: .3; }
+.loading-box { background: var(--white); border: 1px solid var(--border); border-left: 3px solid var(--warm); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; min-height: 180px; }
+.loading-label { font-size: 12px; color: var(--warm2); letter-spacing: .1em; animation: osc 1.5s ease-in-out infinite; }
+@keyframes osc { 0%,100%{opacity:1} 50%{opacity:.3} }
+.dots { display: flex; gap: 5px; }
+.dots span { width: 6px; height: 6px; background: var(--warm); border-radius: 50%; animation: db 1.2s ease-in-out infinite; }
+.dots span:nth-child(2){animation-delay:.15s} .dots span:nth-child(3){animation-delay:.3s}
+@keyframes db { 0%,80%,100%{transform:translateY(0);opacity:.3} 40%{transform:translateY(-6px);opacity:1} }
+
+/* ── PROFILE CARD ── */
+.profile-card { background: var(--white); border: 1px solid var(--border); border-left: 3px solid var(--warm2); padding: 14px 16px; margin-bottom: 14px; }
+.profile-badge { font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--warm2); border: 1px solid rgba(196,160,82,0.4); padding: 2px 7px; display: inline-block; margin-bottom: 6px; }
+.profile-text { font-size: 12px; color: var(--muted); line-height: 1.7; }
+
+/* ── HISTORY LIST ── */
+.hist-item { background: var(--white); border: 1px solid var(--border); border-bottom: none; padding: 13px 15px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.hist-item:last-child { border-bottom: 1px solid var(--border); }
+.hist-subject { font-size: 12px; font-weight: 500; margin-bottom: 2px; }
+.hist-meta { font-size: 10px; color: var(--muted); }
+.badge { display: inline-block; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 7px; flex-shrink: 0; }
+.badge-green { background: rgba(61,122,82,0.1); color: var(--sage); border: 1px solid rgba(61,122,82,0.25); }
+.badge-warm { background: rgba(196,160,82,0.1); color: var(--warm2); border: 1px solid rgba(196,160,82,0.3); }
+
+/* ── CREDIT CARDS ── */
+.credit-grid { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.credit-card { background: var(--white); border: 1px solid var(--border); padding: 18px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all .2s; }
+.credit-card:active { border-color: var(--warm); background: var(--warm-pale); }
+.credit-card.popular { border-color: var(--warm); border-width: 2px; }
+.credit-amount { font-family: var(--font-serif); font-size: 28px; font-weight: 300; color: var(--warm2); }
+.credit-info { font-size: 10px; color: var(--muted); margin-top: 2px; }
+.credit-price { font-family: var(--font-serif); font-size: 20px; font-weight: 400; }
+
+/* ── ADMIN ── */
+.admin-user-card { background: var(--white); border: 1px solid var(--border); border-bottom: none; padding: 13px 15px; }
+.admin-user-card:last-child { border-bottom: 1px solid var(--border); }
+.admin-user-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+.admin-user-meta { font-size: 10px; color: var(--muted); display: flex; gap: 10px; margin-bottom: 8px; }
+.admin-actions { display: flex; gap: 7px; }
+
+/* ── OR DIVIDER ── */
+.or-divider { display: flex; align-items: center; gap: 10px; margin: 12px 0; color: var(--muted); font-size: 11px; }
+.or-divider::before, .or-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* ── TOAST ── */
+#toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(10px); background: var(--ink); color: var(--paper); font-family: var(--font-serif); font-style: italic; font-size: 13px; padding: 10px 22px; opacity: 0; transition: all .28s; pointer-events: none; z-index: 9999; box-shadow: 0 6px 24px var(--shadow); white-space: nowrap; }
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── ADMIN BADGE ── */
+.admin-indicator { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--warm2); letter-spacing: .1em; text-transform: uppercase; padding: 6px 12px; background: rgba(196,160,82,0.1); border: 1px solid rgba(196,160,82,0.3); margin-bottom: 14px; }
+</style>
+</head>
+<body>
+
+<!-- ── SCREENS ── -->
+
+<!-- DASHBOARD -->
+<div class="screen active" id="screen-dashboard">
+  <div class="topbar">
+    <div class="topbar-logo"><div class="topbar-mark">M</div>MailMate</div>
+    <div class="topbar-credits">
+      <span class="topbar-credits-num" id="top-credits">—</span>
+      credits
+    </div>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat-card accent">
+      <div class="stat-num" id="dash-credits">—</div>
+      <div class="stat-label">Credits</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" id="dash-concepts">—</div>
+      <div class="stat-label">Concepten</div>
+    </div>
+  </div>
+
+  <div class="card" id="dash-agent-status">
+    <div class="card-title">Agent status</div>
+    <div class="card-sub" id="dash-agent-sub">Laadt...</div>
+  </div>
+
+  <div class="section-label">Snel starten</div>
+  <button class="btn btn-primary" style="margin-bottom:10px;" onclick="goTo('compose')">✍ Nieuw concept schrijven</button>
+  <button class="btn btn-ghost" onclick="goTo('agent')">◈ Agent trainen</button>
+
+  <div class="section-label" style="margin-top:20px;">Recente activiteit</div>
+  <div id="dash-recent"></div>
+</div>
+
+<!-- AGENT -->
+<div class="screen" id="screen-agent">
+  <div class="topbar">
+    <div class="topbar-logo"><div class="topbar-mark">M</div>Mijn Agent</div>
+    <div class="topbar-credits"><span class="topbar-credits-num" id="agent-top-credits">—</span> cr</div>
+  </div>
+
+  <div class="info-strip">
+    <span class="info-icon">◈</span>
+    <span>Drop je eigen geschreven mails. Hoe meer, hoe beter. Hertrainen kost 3 credits.</span>
+  </div>
+
+  <div class="drop-zone" id="agent-drop"
+    ondragover="ev.preventDefault();this.classList.add('over')"
+    ondragleave="this.classList.remove('over')"
+    ondrop="handleAgentDrop(event)"
+    onclick="document.getElementById('agent-file').click()">
+    <input type="file" id="agent-file" accept=".eml,.txt" multiple style="display:none" onchange="handleAgentFiles(event)">
+    <div class="drop-icon">📧</div>
+    <div class="drop-title">Sleep .eml bestanden</div>
+    <div class="drop-sub">Of tik om bestanden te kiezen</div>
+  </div>
+
+  <div class="or-divider">of plak als tekst</div>
+
+  <textarea id="train-mails" rows="8" placeholder="Van: jij@bedrijf.nl&#10;Onderwerp: Bevestiging afspraak&#10;&#10;Hallo Jan,&#10;&#10;Bedankt voor je bericht...&#10;&#10;——&#10;&#10;[Meer mails hieronder]"></textarea>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;margin-bottom:12px;">
+    <span style="font-size:11px;color:var(--muted);" id="train-counter">0 woorden</span>
+  </div>
+  <button class="btn btn-primary" onclick="trainAgent()" id="btn-train">Agent trainen (3 credits) →</button>
+
+  <div style="margin-top:20px;">
+    <div class="section-label">Huidig profiel</div>
+    <div class="profile-card" id="agent-profile-card" style="display:none;">
+      <div class="profile-badge">Actief</div>
+      <div class="profile-text" id="agent-profile-text"></div>
+    </div>
+    <div class="empty-box" id="agent-profile-empty">
+      <div class="empty-icon">◈</div>
+      Nog geen agent getraind
+    </div>
+  </div>
+</div>
+
+<!-- COMPOSE -->
+<div class="screen" id="screen-compose">
+  <div class="topbar">
+    <div class="topbar-logo"><div class="topbar-mark">M</div>Concept</div>
+    <div class="topbar-credits"><span class="topbar-credits-num" id="compose-top-credits">—</span> cr</div>
+  </div>
+
+  <div class="profile-card" id="compose-profile-strip" style="display:none;">
+    <div class="profile-badge">Agent actief</div>
+    <div class="profile-text" id="compose-profile-text"></div>
+  </div>
+  <div class="info-strip" id="compose-no-agent" style="display:none;">
+    <span class="info-icon">⚠</span>
+    <span>Train eerst je agent. <button onclick="goTo('agent')" style="background:none;border:none;color:var(--warm2);cursor:pointer;font-family:var(--font-mono);font-size:12px;text-decoration:underline;">Ga naar Agent →</button></span>
+  </div>
+
+  <div class="drop-zone" id="compose-drop"
+    ondragover="event.preventDefault();this.classList.add('over')"
+    ondragleave="this.classList.remove('over')"
+    ondrop="handleComposeDrop(event)"
+    onclick="document.getElementById('compose-file').click()">
+    <input type="file" id="compose-file" accept=".eml" style="display:none" onchange="handleComposeFile(event)">
+    <div class="drop-icon">📨</div>
+    <div class="drop-title" id="compose-drop-title">Sleep .eml vanuit Outlook</div>
+    <div class="drop-sub">Of tik om te kiezen</div>
+  </div>
+
+  <div class="or-divider">of plak handmatig</div>
+
+  <textarea id="incoming-mail" rows="7" placeholder="Van: klant@voorbeeld.nl&#10;Onderwerp: Vraag over levering&#10;&#10;Goedemiddag,&#10;&#10;Ik had een vraag..."></textarea>
+
+  <button class="btn btn-primary" style="margin-top:10px;" onclick="generateReply()" id="btn-generate">
+    Concept genereren (1 credit) →
+  </button>
+
+  <div style="margin-top:16px;">
+    <div class="section-label">Concept antwoord</div>
+    <div class="empty-box" id="compose-empty">
+      <div class="empty-icon">✍</div>
+      Vul een inkomende mail in<br>en tik op genereren
+    </div>
+    <div class="loading-box" id="compose-loading" style="display:none;">
+      <div class="dots"><span></span><span></span><span></span></div>
+      <div class="loading-label">Schrijven in jouw stijl...</div>
+    </div>
+    <textarea id="concept-reply" class="reply-area" rows="10" style="display:none;"></textarea>
+    <div class="btn-row" id="compose-actions" style="display:none;">
+      <button class="btn btn-warm" onclick="copyReply()" style="flex:1;">Kopiëren</button>
+      <button class="btn btn-ghost btn-sm" onclick="generateReply()">↻</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearCompose()">✕</button>
+    </div>
+  </div>
+  <div class="disclaimer"><span style="color:var(--warm2);">!</span>MailMate verstuurt nooit zelf.</div>
+</div>
+
+<!-- HISTORY -->
+<div class="screen" id="screen-history">
+  <div class="topbar">
+    <div class="topbar-logo"><div class="topbar-mark">M</div>Geschiedenis</div>
+  </div>
+  <div id="history-list"></div>
+</div>
+
+<!-- CREDITS -->
+<div class="screen" id="screen-credits">
+  <div class="topbar">
+    <div class="topbar-logo"><div class="topbar-mark">M</div>Credits</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Huidig saldo</div>
+    <div style="font-family:var(--font-serif);font-size:52px;font-weight:300;color:var(--warm2);line-height:1;margin-top:8px;" id="credits-big">—</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">credits resterend</div>
+  </div>
+
+  <div class="section-label">Bijkopen</div>
+  <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">1 concept = 1 credit &nbsp;·&nbsp; Agent trainen = 3 credits</div>
+
+  <div class="credit-grid">
+    <div class="credit-card" onclick="buyCreditsFake(50,'€9')">
+      <div><div class="credit-amount">50</div><div class="credit-info">€0.18 per concept</div></div>
+      <div class="credit-price">€9</div>
+    </div>
+    <div class="credit-card popular" onclick="buyCreditsFake(200,'€29')">
+      <div><div class="credit-amount">200</div><div class="credit-info">Meest gekozen · €0.145/concept</div></div>
+      <div class="credit-price">€29</div>
+    </div>
+    <div class="credit-card" onclick="buyCreditsFake(600,'€79')">
+      <div><div class="credit-amount">600</div><div class="credit-info">€0.13 per concept</div></div>
+      <div class="credit-price">€79</div>
+    </div>
+  </div>
+  <div style="font-size:11px;color:var(--muted);margin-top:12px;text-align:center;">Betalingen via Stripe · Geen abonnement</div>
+</div>
+
+<!-- ADMIN -->
+<div class="screen" id="screen-admin">
+  <div class="topbar">
+    <div class="topbar-logo"><div class="topbar-mark">M</div>Admin</div>
+  </div>
+
+  <div class="admin-indicator">⚙ Beheerdersmodus actief</div>
+
+  <div class="stat-row">
+    <div class="stat-card accent"><div class="stat-num" id="admin-users">142</div><div class="stat-label">Gebruikers</div></div>
+    <div class="stat-card"><div class="stat-num" id="admin-revenue">€1.840</div><div class="stat-label">Deze maand</div></div>
+  </div>
+  <div class="stat-row">
+    <div class="stat-card"><div class="stat-num">3.204</div><div class="stat-label">Credits verkocht</div></div>
+    <div class="stat-card"><div class="stat-num">€0.012</div><div class="stat-label">API kosten/concept</div></div>
+  </div>
+
+  <div class="section-label">Gebruikers</div>
+  <div id="admin-user-list">
+    <div class="admin-user-card">
+      <div class="admin-user-name">Jan de Vries</div>
+      <div class="admin-user-meta"><span>187 credits</span><span>24 concepten</span><span>Vandaag actief</span></div>
+      <div class="admin-actions">
+        <button class="btn btn-ghost btn-sm" onclick="adminAddCredits('Jan de Vries')">+ Credits</button>
+        <button class="btn btn-ghost btn-sm" onclick="toast('Berichtfunctie beschikbaar in productie')">Bericht</button>
+      </div>
+    </div>
+    <div class="admin-user-card">
+      <div class="admin-user-name">Sophie Meijer</div>
+      <div class="admin-user-meta"><span>43 credits</span><span>57 concepten</span><span>Gisteren actief</span></div>
+      <div class="admin-actions">
+        <button class="btn btn-ghost btn-sm" onclick="adminAddCredits('Sophie Meijer')">+ Credits</button>
+        <button class="btn btn-ghost btn-sm" onclick="toast('Berichtfunctie beschikbaar in productie')">Bericht</button>
+      </div>
+    </div>
+    <div class="admin-user-card">
+      <div class="admin-user-name">Thomas Bakker</div>
+      <div class="admin-user-meta"><span>198 credits</span><span>12 concepten</span><span>Ma actief</span></div>
+      <div class="admin-actions">
+        <button class="btn btn-ghost btn-sm" onclick="adminAddCredits('Thomas Bakker')">+ Credits</button>
+        <button class="btn btn-ghost btn-sm" onclick="toast('Berichtfunctie beschikbaar in productie')">Bericht</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label" style="margin-top:20px;">API configuratie</div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:12px;">
+      <div>
+        <div style="font-size:12px;font-weight:500;">Anthropic API Key</div>
+        <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono);" id="admin-key-display">sk-ant-••••••••••••</div>
+      </div>
+      <span class="badge badge-green">Actief</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;">
+      <span style="color:var(--muted);">API kosten deze maand</span>
+      <span style="color:var(--danger);font-family:var(--font-serif);font-size:16px;">€38.44</span>
+    </div>
+  </div>
+</div>
+
+<!-- BOTTOM NAV -->
+<nav class="bottom-nav">
+  <button class="nav-tab active" id="tab-dashboard" onclick="goTo('dashboard')">
+    <span class="nav-tab-icon">⊞</span>Home
+  </button>
+  <button class="nav-tab" id="tab-agent" onclick="goTo('agent')">
+    <span class="nav-tab-icon">◈</span>Agent
+  </button>
+  <button class="nav-tab" id="tab-compose" onclick="goTo('compose')">
+    <span class="nav-tab-icon">✍</span>Concept
+  </button>
+  <button class="nav-tab" id="tab-history" onclick="goTo('history')">
+    <span class="nav-tab-icon">◷</span>Historie
+  </button>
+  <button class="nav-tab" id="tab-credits" onclick="goTo('credits')">
+    <span class="nav-tab-icon">◆</span>Credits
+  </button>
+</nav>
+
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════
+// TELEGRAM WEB APP INIT
+// ════════════════════════════════
+const tg = window.Telegram?.WebApp;
+if (tg) {
+  tg.ready();
+  tg.expand();
+  tg.setHeaderColor('#18140f');
+  tg.setBackgroundColor('#f6f1e9');
+}
+
+const TG_USER = tg?.initDataUnsafe?.user || { first_name: 'Demo', id: 0 };
+const IS_ADMIN = (TG_USER.id === parseInt(window.ADMIN_ID || '0')) || window.location.search.includes('admin');
+
+// ════════════════════════════════
+// STATE
+// ════════════════════════════════
+let apiKey = window.ANTHROPIC_KEY || '';
+let styleProfile = sessionStorage.getItem('mm_profile') || '';
+let credits = parseInt(sessionStorage.getItem('mm_credits') || '50');
+let conceptCount = parseInt(sessionStorage.getItem('mm_concepts') || '0');
+let history = JSON.parse(sessionStorage.getItem('mm_history') || '[]');
+
+// ════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════
+function goTo(screen) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('screen-' + screen).classList.add('active');
+  document.getElementById('tab-' + screen)?.classList.add('active');
+  updateCreditsUI();
+
+  if (screen === 'compose') refreshComposeState();
+  if (screen === 'history') renderHistory();
+  if (screen === 'dashboard') renderDashboard();
+  if (screen === 'agent' && styleProfile) showStoredProfile();
+
+  window.scrollTo(0, 0);
+}
+
+// ════════════════════════════════
+// INIT
+// ════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  updateCreditsUI();
+  renderDashboard();
+
+  // Show admin tab if admin
+  if (IS_ADMIN) {
+    const nav = document.querySelector('.bottom-nav');
+    const adminTab = document.createElement('button');
+    adminTab.className = 'nav-tab';
+    adminTab.id = 'tab-admin';
+    adminTab.innerHTML = '<span class="nav-tab-icon">⚙</span>Admin';
+    adminTab.onclick = () => goTo('admin');
+    nav.appendChild(adminTab);
+  }
+
+  // Word counter for train textarea
+  document.getElementById('train-mails').addEventListener('input', function() {
+    const w = this.value.trim().split(/\s+/).filter(Boolean).length;
+    document.getElementById('train-counter').textContent = w + ' woorden';
+  });
+
+  if (styleProfile) showStoredProfile();
+});
+
+// ════════════════════════════════
+// DASHBOARD
+// ════════════════════════════════
+function renderDashboard() {
+  document.getElementById('dash-credits').textContent = credits;
+  document.getElementById('dash-concepts').textContent = conceptCount;
+
+  const agentSub = document.getElementById('dash-agent-sub');
+  if (styleProfile) {
+    document.getElementById('dash-agent-status').style.borderLeftColor = 'var(--sage)';
+    agentSub.innerHTML = '<span style="color:var(--sage);">✓ Actief</span> — klaar om concepten te schrijven';
+  } else {
+    agentSub.innerHTML = '<span style="color:var(--muted);">Nog niet getraind</span> — <button onclick="goTo(\'agent\')" style="background:none;border:none;color:var(--warm2);cursor:pointer;font-size:12px;text-decoration:underline;font-family:var(--font-mono);">Train nu →</button>';
+  }
+
+  const recentEl = document.getElementById('dash-recent');
+  if (history.length === 0) {
+    recentEl.innerHTML = '<div class="empty-box" style="min-height:80px;"><div class="empty-icon" style="font-size:18px;">◷</div>Nog geen concepten gegenereerd</div>';
+  } else {
+    recentEl.innerHTML = history.slice(0, 3).map(h => `
+      <div class="hist-item">
+        <div><div class="hist-subject">${h.subject}</div><div class="hist-meta">${h.time}</div></div>
+        <span class="badge badge-green">Klaar</span>
+      </div>`).join('');
+  }
+}
+
+// ════════════════════════════════
+// AGENT TRAINING
+// ════════════════════════════════
+function handleAgentDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('over');
+  readTrainFiles(Array.from(e.dataTransfer.files));
+}
+function handleAgentFiles(e) { readTrainFiles(Array.from(e.target.files)); }
+
+function readTrainFiles(files) {
+  let combined = '';
+  let done = 0;
+  files.forEach(f => {
+    const r = new FileReader();
+    r.onload = ev => {
+      combined += '\n\n——\n\n' + ev.target.result.slice(0, 2000);
+      done++;
+      if (done === files.length) {
+        document.getElementById('train-mails').value = combined.trim();
+        const w = combined.trim().split(/\s+/).filter(Boolean).length;
+        document.getElementById('train-counter').textContent = w + ' woorden';
+        document.getElementById('agent-drop').querySelector('.drop-title').textContent = `✓ ${files.length} bestand(en) geladen`;
+        document.getElementById('agent-drop').classList.add('loaded');
+        toast(files.length + ' bestand(en) ingeladen');
+      }
+    };
+    r.readAsText(f, 'utf-8');
+  });
+}
+
+async function trainAgent() {
+  const mails = document.getElementById('train-mails').value.trim();
+  if (mails.length < 80) { toast('Voeg meer mailtekst toe'); return; }
+  if (credits < 3) { toast('Onvoldoende credits'); goTo('credits'); return; }
+  if (!apiKey) { toast('Geen API key — contacteer beheerder'); return; }
+
+  const btn = document.getElementById('btn-train');
+  btn.disabled = true; btn.textContent = 'Trainen...';
+
+  try {
+    const res = await callClaude(`Analyseer de schrijfstijl van onderstaande e-mails en maak een compact stijlprofiel in max 200 woorden. Beschrijf: toon, je/u, aanhef, afsluiting, zinslengte, directheid, patronen.\n\nE-MAILS:\n${mails}`);
+    styleProfile = res;
+    sessionStorage.setItem('mm_profile', styleProfile);
+
+    credits -= 3;
+    saveState();
+    updateCreditsUI();
+    showStoredProfile();
+    toast('Agent getraind ✓ — 3 credits gebruikt');
+  } catch(e) { toast('Fout: ' + e.message); }
+
+  btn.disabled = false; btn.textContent = 'Agent trainen (3 credits) →';
+}
+
+function showStoredProfile() {
+  document.getElementById('agent-profile-card').style.display = 'block';
+  document.getElementById('agent-profile-text').textContent = styleProfile.slice(0, 240) + (styleProfile.length > 240 ? '...' : '');
+  document.getElementById('agent-profile-empty').style.display = 'none';
+}
+
+// ════════════════════════════════
+// COMPOSE
+// ════════════════════════════════
+function refreshComposeState() {
+  const hasProfile = styleProfile.length > 0;
+  const strip = document.getElementById('compose-profile-strip');
+  const warn = document.getElementById('compose-no-agent');
+  if (hasProfile) {
+    strip.style.display = 'block';
+    document.getElementById('compose-profile-text').textContent = styleProfile.slice(0, 160) + '...';
+    warn.style.display = 'none';
+  } else {
+    strip.style.display = 'none';
+    warn.style.display = 'flex';
+  }
+}
+
+function handleComposeDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('over');
+  const file = e.dataTransfer.files[0];
+  if (file) readComposeFile(file);
+}
+function handleComposeFile(e) { if (e.target.files[0]) readComposeFile(e.target.files[0]); }
+
+function readComposeFile(file) {
+  const r = new FileReader();
+  r.onload = ev => {
+    document.getElementById('incoming-mail').value = parseEml(ev.target.result);
+    document.getElementById('compose-drop-title').textContent = '✓ ' + file.name;
+    document.getElementById('compose-drop').classList.add('loaded');
+    toast('Mail geladen: ' + file.name);
+  };
+  r.readAsText(file, 'utf-8');
+}
+
+function parseEml(raw) {
+  const from = (raw.match(/^From:\s*(.+)$/m) || [])[1] || '';
+  const subj = (raw.match(/^Subject:\s*(.+)$/m) || [])[1] || '';
+  const date = (raw.match(/^Date:\s*(.+)$/m) || [])[1] || '';
+  let body = '';
+  const he = raw.search(/\r?\n\r?\n/);
+  if (he > -1) {
+    body = raw.slice(he).trim()
+      .replace(/Content-[^\n]+\n/g, '')
+      .replace(/[A-Za-z0-9+/]{60,}={0,2}/g, '')
+      .replace(/=\r?\n/g, '')
+      .replace(/=[0-9A-F]{2}/g, m => String.fromCharCode(parseInt(m.slice(1), 16)))
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+      .replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  return [from && `Van: ${from}`, date && `Datum: ${date}`, subj && `Onderwerp: ${subj}`, body].filter(Boolean).join('\n').trim() || raw.slice(0, 1600);
+}
+
+async function generateReply() {
+  const incoming = document.getElementById('incoming-mail').value.trim();
+  if (!incoming) { toast('Vul een inkomende mail in'); return; }
+  if (!styleProfile) { toast('Train eerst je agent'); goTo('agent'); return; }
+  if (credits < 1) { toast('Onvoldoende credits'); goTo('credits'); return; }
+  if (!apiKey) { toast('Geen API key — contacteer beheerder'); return; }
+
+  const btn = document.getElementById('btn-generate');
+  btn.disabled = true; btn.textContent = 'Genereren...';
+
+  document.getElementById('compose-empty').style.display = 'none';
+  document.getElementById('concept-reply').style.display = 'none';
+  document.getElementById('compose-actions').style.display = 'none';
+  document.getElementById('compose-loading').style.display = 'flex';
+
+  try {
+    const system = `Je bent een e-mail assistent die antwoorden schrijft PRECIES in de schrijfstijl van de gebruiker.\n\nSCHRIJFSTIJL PROFIEL:\n${styleProfile}\n\nREGELS:\n- Schrijf in dezelfde stijl, toon en structuur\n- Gebruik dezelfde aanhef en afsluiting\n- Geen uitleg — alleen het conceptantwoord`;
+    const reply = await callClaude(`Schrijf een conceptantwoord op deze inkomende mail:\n\n${incoming}`, system);
+
+    document.getElementById('concept-reply').value = reply;
+    document.getElementById('compose-loading').style.display = 'none';
+    document.getElementById('concept-reply').style.display = 'block';
+    document.getElementById('compose-actions').style.display = 'flex';
+
+    credits -= 1;
+    conceptCount += 1;
+
+    const subj = (incoming.match(/Onderwerp:\s*(.+)/) || ['', 'Onbekend onderwerp'])[1];
+    history.unshift({ subject: subj, time: new Date().toLocaleString('nl-NL', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) });
+    if (history.length > 20) history.pop();
+
+    saveState();
+    updateCreditsUI();
+
+    // Telegram haptic feedback
+    tg?.HapticFeedback?.notificationOccurred('success');
+
+  } catch(e) {
+    document.getElementById('compose-loading').style.display = 'none';
+    document.getElementById('compose-empty').style.display = 'flex';
+    toast('Fout: ' + e.message);
+  }
+
+  btn.disabled = false; btn.textContent = 'Concept genereren (1 credit) →';
+}
+
+function copyReply() {
+  const text = document.getElementById('concept-reply').value;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => toast('Gekopieerd ✓'));
+  } else {
+    document.getElementById('concept-reply').select();
+    document.execCommand('copy');
+    toast('Gekopieerd ✓');
+  }
+  tg?.HapticFeedback?.impactOccurred('light');
+}
+
+function clearCompose() {
+  document.getElementById('incoming-mail').value = '';
+  document.getElementById('concept-reply').value = '';
+  document.getElementById('concept-reply').style.display = 'none';
+  document.getElementById('compose-actions').style.display = 'none';
+  document.getElementById('compose-loading').style.display = 'none';
+  document.getElementById('compose-empty').style.display = 'flex';
+  document.getElementById('compose-drop-title').textContent = 'Sleep .eml vanuit Outlook';
+  document.getElementById('compose-drop').classList.remove('loaded');
+  document.getElementById('compose-file').value = '';
+}
+
+// ════════════════════════════════
+// HISTORY
+// ════════════════════════════════
+function renderHistory() {
+  const el = document.getElementById('history-list');
+  if (history.length === 0) {
+    el.innerHTML = '<div class="empty-box"><div class="empty-icon">◷</div>Nog geen concepten gegenereerd</div>';
+    return;
+  }
+  el.innerHTML = history.map(h => `
+    <div class="hist-item">
+      <div><div class="hist-subject">${h.subject}</div><div class="hist-meta">${h.time}</div></div>
+      <span class="badge badge-green">Klaar</span>
+    </div>`).join('');
+}
+
+// ════════════════════════════════
+// CREDITS
+// ════════════════════════════════
+function buyCreditsFake(amount, price) {
+  toast(`${price} betaling gestart — (demo) ${amount} credits toegevoegd`);
+  credits += amount;
+  saveState();
+  updateCreditsUI();
+  tg?.HapticFeedback?.notificationOccurred('success');
+}
+
+function updateCreditsUI() {
+  ['top-credits', 'agent-top-credits', 'compose-top-credits', 'dash-credits', 'credits-big'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = credits;
+  });
+}
+
+// ════════════════════════════════
+// ADMIN
+// ════════════════════════════════
+function adminAddCredits(name) {
+  toast(`Credits toegevoegd aan ${name} ✓`);
+  tg?.HapticFeedback?.impactOccurred('medium');
+}
+
+// ════════════════════════════════
+// STATE PERSISTENCE
+// ════════════════════════════════
+function saveState() {
+  sessionStorage.setItem('mm_credits', credits);
+  sessionStorage.setItem('mm_concepts', conceptCount);
+  sessionStorage.setItem('mm_history', JSON.stringify(history));
+}
+
+// ════════════════════════════════
+// API CALL
+// ════════════════════════════════
+async function callClaude(userMsg, systemMsg = '') {
+  const body = {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1000,
+    messages: [{ role: 'user', content: userMsg }]
+  };
+  if (systemMsg) body.system = systemMsg;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.content?.map(b => b.text || '').join('') || '';
+}
+
+// ════════════════════════════════
+// TOAST
+// ════════════════════════════════
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2400);
+}
+</script>
+</body>
+</html>
