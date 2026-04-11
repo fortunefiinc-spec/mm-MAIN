@@ -288,7 +288,16 @@ async function startOnboarding(userId, firstName) {
 // ── /START ────────────────────────────────────────────
 bot.onText(/\/start/, async (msg) => {
   const { id, first_name } = msg.from;
-  const user = await getUser(id, first_name);
+  let user;
+  try {
+    user = await getUser(id, first_name);
+  } catch(e) {
+    console.error('Start fout bij getUser:', e.message);
+    user = { telegram_id: id, name: first_name, credits: 10, concept_count: 0, style_profiles: '{"default":""}', active_style: 'default', user_knowledge: '', onboarded: false };
+  }
+  if (!user) {
+    user = { telegram_id: id, name: first_name, credits: 10, concept_count: 0, style_profiles: '{"default":""}', active_style: 'default', user_knowledge: '', onboarded: false };
+  }
 
   if (!user.onboarded) {
     await startOnboarding(id, first_name);
