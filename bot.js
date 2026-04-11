@@ -122,16 +122,20 @@ function getState(id) {
 
 // ── SUPABASE ──────────────────────────────────────────
 async function getUser(telegramId, name) {
-  const { data } = await supabase.from('users').select('*').eq('telegram_id', telegramId).single();
-  if (!data) {
-    const { data: n } = await supabase.from('users')
+  try {
+    const { data } = await supabase.from('users').select('*').eq('telegram_id', telegramId).single();
+    if (data) return data;
+    const { data: newUser, error: insertError } = await supabase.from('users')
       .insert({ telegram_id: telegramId, name: name || 'Gebruiker', credits: 10, concept_count: 0,
                 style_profiles: JSON.stringify({ default: '' }), active_style: 'default',
                 user_knowledge: '', onboarded: false })
       .select().single();
-    return n;
+    if (insertError) { console.error('Insert fout:', JSON.stringify(insertError)); }
+    return newUser || { telegram_id: telegramId, name: name||'Gebruiker', credits: 10, concept_count: 0, style_profiles: JSON.stringify({default:''}), active_style: 'default', user_knowledge: '', onboarded: false };
+  } catch(e) {
+    console.error('getUser fout:', e.message);
+    return { telegram_id: telegramId, name: name||'Gebruiker', credits: 10, concept_count: 0, style_profiles: JSON.stringify({default:''}), active_style: 'default', user_knowledge: '', onboarded: false };
   }
-  return data;
 }
 
 async function saveUser(telegramId, updates) {
