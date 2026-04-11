@@ -81,37 +81,25 @@ app.listen(PORT, '0.0.0.0', () => {
   }
 });
 
-// ── VASTE KENNISBASIS ─────────────────────────────────
-const BASE_KNOWLEDGE = `
-## Assurantie Kennisbasis
+// ── KENNISBASIS ──────────────────────────────────────
+// Dynamisch op basis van vakgebied van de gebruiker
+function buildBaseKnowledge(vakgebied, doel, toon) {
+  return `
+Jij bent een professionele e-mail assistent.
 
-### Wft kernregels
-- Zorgplicht: belang van de klant altijd centraal
-- Provisieverbod voor bepaalde schadeverzekeringen
-- Recht op dienstverleningsdocument (dvd) en passend advies
-- Informatieplicht via Financieel Bijsluiter bij complexe producten
+VAKGEBIED: ${vakgebied || 'Algemeen'}
+DOEL VAN DE MAILS: ${doel || 'Professionele communicatie'}
+TOON VOORKEUR: ${toon || 'Professioneel en vriendelijk'}
 
-### Kernbegrippen
-- Premie · Eigen risico · Dekking · Uitsluitingen · Claimvrije jaren
-- Aansprakelijkheid · Herbouwwaarde · Dagwaarde · Nieuwwaarde · Royement
-- Natura-uitkering vs gelduitkering · Wachttijd · Carenzperiode
+GEDRAGSREGELS:
+- Schrijf altijd passend bij het vakgebied en doel
+- Gebruik vaktermen die horen bij: ${vakgebied || 'het opgegeven vakgebied'}
+- Houd rekening met de toon voorkeur: ${toon || 'professioneel'}
+- Geen AI-uitleg — alleen het conceptantwoord
+- Bij twijfel over specifieke details: verwijs naar een persoonlijk gesprek
+  `.trim();
+}
 
-### Verzekeringsvormen
-Leven: levensverzekering, ORV, uitvaartverzekering
-Schade: opstal, inboedel, auto (WA/casco), reis, rechtsbijstand
-Zakelijk: AVB, beroepsaansprakelijkheid, bedrijfsschade, cyber
-Inkomen: AOV, WGA-hiaatverzekering, collectief verzuim
-
-### Zorgplicht & Communicatie
-- Helder en begrijpelijk communiceren, geen onnodig jargon
-- Bij twijfel: verwijzen naar polisvoorwaarden of persoonlijk gesprek
-- Nooit garanties geven over uitkeringen zonder de polis te kennen
-- Bij klachten: klachtenprocedure en eventueel Kifid
-- Disclaimer bij adviesgerelateerde antwoorden
-
-### Kifid
-Klachteninstituut Financiële Dienstverlening — verwijzing gepast bij onopgeloste klachten.
-`;
 
 // ── SESSION STATE ─────────────────────────────────────
 const sessionState = new Map();
@@ -189,9 +177,12 @@ async function buildSystemPrompt(user, styleName = 'default') {
   const profiles     = JSON.parse(user.style_profiles || '{"default":""}');
   const activeProfile = profiles[styleName] || profiles['default'] || '';
   const globalExtra  = await getGlobalKnowledge();
+  const vakgebied    = user.vakgebied || '';
+  const doel         = user.doel || '';
+  const toon         = user.toon_voorkeur || '';
 
-  return `Je bent een professionele e-mail assistent voor een assurantiekantoor.
-Je schrijft conceptantwoorden in de schrijfstijl van de gebruiker, met correcte assurantiekennis.
+  return `Je bent een professionele e-mail assistent.
+Je schrijft conceptantwoorden in de schrijfstijl van de gebruiker.
 
 ════════════════════════════════
 SCHRIJFSTIJL — ${styleName.toUpperCase()}
@@ -199,17 +190,17 @@ SCHRIJFSTIJL — ${styleName.toUpperCase()}
 ${activeProfile || 'Nog niet getraind — schrijf professioneel en vriendelijk.'}
 
 ════════════════════════════════
-VASTE ASSURANTIE KENNISBASIS
+PROFIEL VAN DEZE GEBRUIKER
 ════════════════════════════════
-${BASE_KNOWLEDGE}
+${buildBaseKnowledge(vakgebied, doel, toon)}
 
 ${globalExtra ? `════════════════════════════════
-KANTOORKENNIS GLOBAAL (admin)
+GLOBALE KENNISBANK (admin)
 ════════════════════════════════
 ${globalExtra}` : ''}
 
 ${user.user_knowledge ? `════════════════════════════════
-PERSOONLIJKE KANTOORKENNIS
+PERSOONLIJKE KENNISBANK
 ════════════════════════════════
 ${user.user_knowledge}` : ''}
 
@@ -217,10 +208,8 @@ ${user.user_knowledge}` : ''}
 REGELS
 ════════════════════════════════
 - Schrijf ALTIJD in de opgegeven schrijfstijl
-- Gebruik correcte assurantie terminologie
-- Voeg disclaimer toe bij adviesgerelateerde antwoorden
-- Geef ALLEEN het conceptantwoord — geen uitleg of commentaar
-- Bij twijfel over dekking: verwijs naar polisvoorwaarden`;
+- Gebruik terminologie passend bij het vakgebied
+- Geef ALLEEN het conceptantwoord — geen uitleg of commentaar`;
 }
 
 // ── STRIPE BETAALLINK ─────────────────────────────────
@@ -277,12 +266,19 @@ async function callClaude(userMsg, systemMsg = '', maxTokens = 1200) {
 async function startOnboarding(userId, firstName) {
   await bot.sendMessage(userId,
     `✉ *Welkom bij MailMate, ${firstName}!*\n\n` +
-    `Ik ben jouw AI-assistent voor professionele assurantie e-mails.\n\n` +
-    `Laten we je in 3 stappen klaarstomen:\n\n` +
-    `*Stap 1 van 3 — Schrijfstijl*\n\nStuur me 5 of meer e-mails die jij zelf hebt geschreven (gescheiden door ——). Ik leer hieruit hoe jij schrijft.\n\n_Heb je geen mails bij de hand? Tik /skip om later te trainen._`,
+    `Ik ben jouw persoonlijke AI e-mail assistent.\n\n` +
+    `Laten we je in 4 stappen instellen:\n\n` +
+    `*Stap 1 van 4 — Jouw vakgebied*\n\n` +
+    `In welk vakgebied werk je en wat is het doel van jouw e-mails?\n\n` +
+    `Beschrijf dit kort, bijv:\n` +
+    `• _Assurantiekantoor — klantadvies en polisbeheer_\n` +
+    `• _Bouwbedrijf — offertes en projectopvolging_\n` +
+    `• _Webshop — klantenservice en klachtenafhandeling_\n` +
+    `• _ZZP coach — intake en sessie-opvolging_\n\n` +
+    `_Of tik /skip om later in te stellen._`,
     { parse_mode: 'Markdown' }
   );
-  getState(userId).step = 'onboard_style';
+  getState(userId).step = 'onboard_vakgebied';
 }
 
 // ── /START ────────────────────────────────────────────
@@ -320,14 +316,31 @@ bot.onText(/\/start/, async (msg) => {
 bot.onText(/\/skip/, async (msg) => {
   const { id, first_name } = msg.from;
   const s = getState(id);
-  if (s.step === 'onboard_style') {
-    await saveUser(id, { onboarded: true });
-    s.step = 'idle';
-    bot.sendMessage(id, `✓ Overgeslagen. Je kunt je stijl later trainen via ◈ Stijl trainen.`, { reply_markup: mainKeyboard(id) });
+
+  if (s.step === 'onboard_vakgebied') {
+    await saveUser(id, { vakgebied: 'Algemeen', doel: 'Professionele communicatie' });
+    s.step = 'onboard_toon';
+    bot.sendMessage(id,
+      `✓ Overgeslagen.\n\n*Stap 2 van 4 — Toon voorkeur*\n\nWelke toon gebruik jij?`,
+      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
+        [{ text: '👔 Formeel', callback_data: 'toon_formeel' }],
+        [{ text: '😊 Informeel', callback_data: 'toon_informeel' }],
+        [{ text: '⚖️ Mix', callback_data: 'toon_mix' }],
+      ]}}
+    );
+  } else if (s.step === 'onboard_style') {
+    s.step = 'onboard_knowledge';
+    bot.sendMessage(id,
+      `✓ Stijl overgeslagen.\n\n*Stap 4 van 4 — Kennisbank*\n\nVoeg info toe die je agent moet kennen, of tik /skip.`,
+      { parse_mode: 'Markdown' }
+    );
   } else if (s.step === 'onboard_knowledge') {
     await saveUser(id, { onboarded: true });
     s.step = 'idle';
-    bot.sendMessage(id, `✓ Klaar! Je kunt kennisbank later vullen via 📚 Kennisbank.`, { reply_markup: mainKeyboard(id) });
+    bot.sendMessage(id,
+      `✅ *Setup compleet!*\n\nJe agent is klaar. Stuur een mail om je eerste concept te schrijven.`,
+      { parse_mode: 'Markdown', reply_markup: mainKeyboard(id) }
+    );
   }
 });
 
@@ -563,6 +576,18 @@ bot.on('callback_query', async (query) => {
     bot.sendMessage(userId, r, { parse_mode: 'Markdown' });
   }
 
+  // ── TOON SELECTIE (onboarding stap 2) ──
+  else if (data.startsWith('toon_')) {
+    const toonMap = { toon_formeel: 'Formeel', toon_informeel: 'Informeel', toon_mix: 'Mix (situatie-afhankelijk)' };
+    const toon = toonMap[data] || 'Professioneel';
+    await saveUser(userId, { toon_voorkeur: toon });
+    getState(userId).step = 'onboard_style';
+    bot.sendMessage(userId,
+      `✅ *Toon opgeslagen: ${toon}*\n\n*Stap 3 van 4 — Schrijfstijl*\n\nStuur me 5 of meer e-mails die jij zelf hebt geschreven (gescheiden door ——). Ik leer hieruit precies hoe jij schrijft.\n\n_Heb je geen mails bij de hand? Tik /skip om later te trainen._`,
+      { parse_mode: 'Markdown' }
+    );
+  }
+
   // ── HOME ──
   else if (data === 'home') {
     s.step = 'idle';
@@ -613,18 +638,38 @@ bot.on('message', async (msg) => {
 
   if (!text) return;
 
+  // ── ONBOARDING: vakgebied ──
+  if (s.step === 'onboard_vakgebied') {
+    // Parse vakgebied en optioneel toon
+    const parts = text.split('—').map(p => p.trim());
+    const vakgebied = parts[0] || text;
+    const doel = parts[1] || '';
+    await saveUser(userId, { vakgebied, doel });
+    s.step = 'onboard_toon';
+    bot.sendMessage(userId,
+      `✅ *Vakgebied opgeslagen!*\n\n*Stap 2 van 4 — Toon voorkeur*\n\nWelke toon gebruik jij in je e-mails?`,
+      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
+        [{ text: '👔 Formeel',           callback_data: 'toon_formeel'   }],
+        [{ text: '😊 Informeel',         callback_data: 'toon_informeel' }],
+        [{ text: '⚖️ Mix (situatie-afhankelijk)', callback_data: 'toon_mix' }],
+      ]}}
+    );
+    return;
+  }
+
   // ── ONBOARDING: stijl ──
   if (s.step === 'onboard_style') {
     if (text.length < 80) return bot.sendMessage(userId, '⚠️ Te kort. Stuur meer mails of tik /skip.');
     const load = await bot.sendMessage(userId, '◈ _Stijl analyseren..._', { parse_mode: 'Markdown' });
     try {
-      const profile = await callClaude(`Analyseer de schrijfstijl van onderstaande assurantie e-mails. Compact stijlprofiel in max 200 woorden: toon, je/u, aanhef, afsluiting, zinslengte, directheid, vaktermen.\n\nE-MAILS:\n${text}`);
+      const vakgebied = user.vakgebied || 'algemeen';
+      const profile = await callClaude(`Analyseer de schrijfstijl van onderstaande e-mails (vakgebied: ${vakgebied}). Compact stijlprofiel in max 200 woorden: toon, je/u, aanhef, afsluiting, zinslengte, directheid, specifieke uitdrukkingen.\n\nE-MAILS:\n${text}`);
       const profiles = { default: profile };
       await saveUser(userId, { style_profiles: JSON.stringify(profiles), credits: user.credits - 3 });
       bot.deleteMessage(userId, load.message_id).catch(()=>{});
       s.step = 'onboard_knowledge';
       bot.sendMessage(userId,
-        `✅ *Stijl geleerd!* (3 credits)\n\n*Stap 2 van 3 — Kennisbank*\n\nVoeg kantoorspecifieke info toe: producten, voorwaarden, FAQ.\n\n_Tik /skip om later toe te voegen._`,
+        `✅ *Stijl geleerd!* (3 credits)\n\n*Stap 4 van 4 — Kennisbank*\n\nVoeg specifieke info toe die de agent moet weten: producten, diensten, veelgestelde vragen, voorwaarden.\n\n_Tik /skip om later toe te voegen._`,
         { parse_mode: 'Markdown' }
       );
     } catch(e) {
