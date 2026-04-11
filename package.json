@@ -1,7 +1,7 @@
 {
   "name": "mailmate-bot",
   "version": "3.0.0",
-  "description": "MailMate Telegram Bot v3 — Stripe · Onboarding · Multi-stijl · Kennisbank",
+  "description": "MailMate Telegram Bot",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
@@ -16,10 +16,7 @@
     "pdf-parse": "^1.1.1",
     "stripe": "^14.0.0"
   },
-  "devDependencies": {
-    "nodemon": "^3.0.0"
-  },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   }
 }
