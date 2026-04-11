@@ -38,6 +38,10 @@ app.use((req, res, next) => {
   else express.json()(req, res, next);
 });
 
+// Health check — Railway gebruikt dit om te zien of de app draait
+app.get('/', (req, res) => res.send('MailMate OK'));
+app.get('/health', (req, res) => res.send('OK'));
+
 if (WEBHOOK_URL) {
   bot.setWebHook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`);
   app.post(`/bot${BOT_TOKEN}`, (req, res) => { bot.processUpdate(req.body); res.sendStatus(200); });
