@@ -42,10 +42,11 @@ app.use((req, res, next) => {
 app.get('/', (req, res) => res.send('MailMate OK'));
 app.get('/health', (req, res) => res.send('OK'));
 
-if (WEBHOOK_URL) {
-  bot.setWebHook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`);
-  app.post(`/bot${BOT_TOKEN}`, (req, res) => { bot.processUpdate(req.body); res.sendStatus(200); });
-}
+// Telegram webhook route
+app.post(`/bot${BOT_TOKEN}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
 
 // Stripe webhook endpoint
 app.post('/stripe-webhook', async (req, res) => {
@@ -54,14 +55,14 @@ app.post('/stripe-webhook', async (req, res) => {
   try {
     const event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
     if (event.type === 'checkout.session.completed') {
-      const session   = event.data.object;
+      const session    = event.data.object;
       const telegramId = parseInt(session.metadata.telegram_id);
       const credits    = parseInt(session.metadata.credits);
       const user       = await getUser(telegramId, '');
       if (user) {
         await saveUser(telegramId, { credits: user.credits + credits });
         bot.sendMessage(telegramId,
-          `✅ *Betaling ontvangen!*\n\n*${credits} credits* zijn toegevoegd aan je account.\nNieuw saldo: *${user.credits + credits} credits*`,
+          `✅ *Betaling ontvangen!*\n\n*${credits} credits* toegevoegd.\nNieuw saldo: *${user.credits + credits} credits*`,
           { parse_mode: 'Markdown', reply_markup: mainKeyboard(telegramId) }
         );
       }
@@ -70,7 +71,15 @@ app.post('/stripe-webhook', async (req, res) => {
   res.sendStatus(200);
 });
 
-app.listen(PORT, () => console.log(`✉ MailMate v3 draait op poort ${PORT}`));
+// Start server — webhook wordt automatisch gezet via WEBHOOK_URL variable
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✉ MailMate v3 draait op poort ${PORT}`);
+  if (WEBHOOK_URL) {
+    bot.setWebHook(`${WEBHOOK_URL}/bot${BOT_TOKEN}`)
+      .then(() => console.log(`✅ Webhook actief`))
+      .catch(e => console.error('Webhook fout:', e.message));
+  }
+});
 
 // ── VASTE KENNISBASIS ─────────────────────────────────
 const BASE_KNOWLEDGE = `
