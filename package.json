@@ -1,7 +1,7 @@
 {
   "name": "mailmate-bot",
-  "version": "3.0.0",
-  "description": "MailMate Telegram Bot",
+  "version": "4.0.0",
+  "description": "MailMate v4 - AI Email Assistant",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
@@ -16,7 +16,5 @@
     "pdf-parse": "^1.1.1",
     "stripe": "^14.0.0"
   },
-  "engines": {
-    "node": ">=20.0.0"
-  }
+  "engines": { "node": ">=20.0.0" }
 }
