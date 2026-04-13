@@ -1,40 +1,40 @@
-// MailMate Bot v4.1 -- Whitelist + Rate limiting + Toegangsbeveiliging
+// MailMate Bot v5 - Clean rebuild
 require('dotenv').config();
-const TelegramBot      = require('node-telegram-bot-api');
-const Anthropic        = require('@anthropic-ai/sdk');
+const TelegramBot = require('node-telegram-bot-api');
+const Anthropic = require('@anthropic-ai/sdk');
 const { createClient } = require('@supabase/supabase-js');
-const express          = require('express');
+const express = require('express');
 
-const BOT_TOKEN     = process.env.BOT_TOKEN;
-const ADMIN_ID      = parseInt(process.env.ADMIN_ID);
+// Config
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const ADMIN_ID = parseInt(process.env.ADMIN_ID || '0');
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
-const MINI_APP_URL  = process.env.MINI_APP_URL;
-const PORT          = process.env.PORT || 3000;
-const WEBHOOK_URL   = process.env.WEBHOOK_URL;
-const SUPABASE_URL  = process.env.SUPABASE_URL;
-const SUPABASE_KEY  = process.env.SUPABASE_KEY;
-const STRIPE_KEY    = process.env.STRIPE_SECRET_KEY;
-const STRIPE_ACTIVE = !!STRIPE_KEY;
+const MINI_APP_URL = process.env.MINI_APP_URL || '';
+const PORT = process.env.PORT || 3000;
+const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+const STRIPE_KEY = process.env.STRIPE_SECRET_KEY;
+const ACCESS_CODE = process.env.ACCESS_CODE || 'mailmate2025';
+const MAX_PER_HOUR = parseInt(process.env.MAX_PER_HOUR || '20');
 
-// Toegangscode voor nieuwe gebruikers (stel in via Railway Variables)
-const ACCESS_CODE   = process.env.ACCESS_CODE || 'mailmate2025';
-
-// Rate limiting: max concepten per uur
-const MAX_PER_HOUR  = parseInt(process.env.MAX_PER_HOUR || '20');
-
-const bot       = new TelegramBot(BOT_TOKEN, WEBHOOK_URL ? { webHook: true } : { polling: true });
+const bot = new TelegramBot(BOT_TOKEN, WEBHOOK_URL ? { webHook: true } : { polling: true });
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
-const supabase  = createClient(SUPABASE_URL, SUPABASE_KEY);
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let stripe = null;
-if (STRIPE_ACTIVE) { stripe = require('stripe')(STRIPE_KEY); console.log('Stripe actief'); }
-else { console.log('Stripe demo modus'); }
+if (STRIPE_KEY) {
+  stripe = require('stripe')(STRIPE_KEY);
+  console.log('Stripe actief');
+} else {
+  console.log('Stripe demo modus');
+}
 
 // Express
 const app = express();
 
-// CORS -- laat webapp op app.mailmate.nl de API gebruiken
-app.use((req, res, next) => {
+// CORS
+app.use(function(req, res, next) {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
@@ -42,26 +42,35 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use((req, res, next) => {
-  if (req.path === '/stripe-webhook') express.raw({ type: 'application/json' })(req, res, next);
-  else express.json()(req, res, next);
+app.use(function(req, res, next) {
+  if (req.path === '/stripe-webhook') {
+    express.raw({ type: 'application/json' })(req, res, next);
+  } else {
+    express.json()(req, res, next);
+  }
 });
 
-app.get('/', (req, res) => res.send('MailMate v4.1 OK'));
-app.get('/health', (req, res) => res.json({ status: 'ok', version: '4.1.0' }));
-app.post('/bot' + BOT_TOKEN, (req, res) => { bot.processUpdate(req.body); res.sendStatus(200); });
+app.get('/', function(req, res) { res.send('MailMate v5 OK'); });
+app.get('/health', function(req, res) { res.json({ status: 'ok', version: '5.0.0' }); });
+
+// Telegram webhook
+app.post('/bot' + BOT_TOKEN, function(req, res) {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
 
 // Stripe webhook
-app.post('/stripe-webhook', async (req, res) => {
-  if (!STRIPE_ACTIVE) return res.sendStatus(200);
+app.post('/stripe-webhook', async function(req, res) {
+  if (!stripe) return res.sendStatus(200);
   try {
-    const event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET);
+    var event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET);
     if (event.type === 'checkout.session.completed') {
-      const { telegram_id, credits } = event.data.object.metadata;
-      const user = await getUser(parseInt(telegram_id), '');
-      if (user) {
-        await saveUser(parseInt(telegram_id), { credits: user.credits + parseInt(credits) });
-        bot.sendMessage(parseInt(telegram_id), '*' + credits + ' berichten toegevoegd!*\n\nNieuw saldo: *' + (user.credits + parseInt(credits)) + ' berichten*', { parse_mode: 'Markdown', reply_markup: mainKeyboard(parseInt(telegram_id)) });
+      var tid = parseInt(event.data.object.metadata.telegram_id);
+      var cr = parseInt(event.data.object.metadata.credits);
+      var u = await getUser(tid, '');
+      if (u) {
+        await saveUser(tid, { credits: u.credits + cr });
+        bot.sendMessage(tid, cr + ' berichten toegevoegd! Nieuw saldo: ' + (u.credits + cr), { reply_markup: mainKeyboard(tid) });
       }
     }
   } catch(e) { console.error('Stripe:', e.message); }
@@ -69,1003 +78,904 @@ app.post('/stripe-webhook', async (req, res) => {
 });
 
 // Outlook/Gmail webhook
-app.post('/mailhook/:userId', async (req, res) => {
-  const telegramId = parseInt(req.params.userId);
-  const apiKey     = req.headers['x-api-key'];
-  const user = await getUser(telegramId, '');
-  if (!user || user.webhook_key !== apiKey) return res.status(401).json({ error: 'Unauthorized' });
-  if (!user.approved) return res.status(403).json({ error: 'Account niet goedgekeurd' });
-
-  const { subject, from, body } = req.body;
+app.post('/mailhook/:userId', async function(req, res) {
+  var tid = parseInt(req.params.userId);
+  var apiKey = req.headers['x-api-key'];
+  var u = await getUser(tid, '');
+  if (!u || u.webhook_key !== apiKey) return res.status(401).json({ error: 'Unauthorized' });
+  if (!u.approved && tid !== ADMIN_ID) return res.status(403).json({ error: 'Niet goedgekeurd' });
+  var subject = req.body.subject || '';
+  var from = req.body.from || '';
+  var body = req.body.body || '';
   if (!body) return res.status(400).json({ error: 'body required' });
-
   try {
-    const mailText     = 'Van: ' + (from||'') + '\nOnderwerp: ' + (subject||'') + '\n\n' + body;
-    const analysis     = await analyzeMail(mailText);
-    const systemPrompt = await buildSystemPrompt(user);
-    const concept      = await callClaude('Schrijf een conceptantwoord:\n\n' + mailText, systemPrompt);
-    const subjectLine  = await generateSubjectLine(subject, concept);
-
-    await saveUser(telegramId, { credits: user.credits - 1, concept_count: user.concept_count + 1 });
-    await addHistory(telegramId, subject || 'Mail via webhook', concept);
-    if (from) await upsertClient(telegramId, from, subject, body);
-
-    bot.sendMessage(telegramId,
-      '*Nieuwe mail via koppeling*\n\nVan: ' + from + '\nOnderwerp: ' + subject + '\nSfeer: ' + (analysis.sentiment === 'urgent' ? 'Urgent' : analysis.sentiment === 'negatief' ? 'Negatief' : 'Normaal') + '\n\n*Conceptantwoord:*\n\n' + concept + '\n\n_Onderwerpregel: ' + subjectLine + '_\n\n_Saldo: ' + (user.credits-1) + ' berichten_',
-      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-        [{ text: 'Aanpassen', callback_data: 'refine' }, { text: 'Herschrijven', callback_data: 'compose' }],
-        [{ text: 'Home', callback_data: 'home' }],
-      ]}}
-    );
-    res.json({ success: true, concept, subject_line: subjectLine });
+    var mailText = 'Van: ' + from + '\nOnderwerp: ' + subject + '\n\n' + body;
+    var sys = await buildSystemPrompt(u);
+    var concept = await callClaude('Schrijf een conceptantwoord op deze e-mail:\n\n' + mailText, sys);
+    await saveUser(tid, { credits: u.credits - 1, concept_count: u.concept_count + 1 });
+    await addHistory(tid, subject || 'Mail via koppeling', concept);
+    bot.sendMessage(tid, 'Nieuwe mail van: ' + from + '\nOnderwerp: ' + subject + '\n\nConceptantwoord:\n\n' + concept + '\n\nSaldo: ' + (u.credits - 1) + ' berichten', {
+      reply_markup: { inline_keyboard: [
+        [{ text: 'Aanpassen', callback_data: 'refine' }, { text: 'Opnieuw', callback_data: 'compose' }],
+        [{ text: 'Home', callback_data: 'home' }]
+      ]}
+    });
+    res.json({ success: true, concept: concept });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Externe API -- webapp endpoints
-// POST /api/compose-ab -- A/B versies
-app.post('/api/compose-ab', async (req, res) => {
-  const { telegram_id, api_key, mail_text, style } = req.body;
-  const user = await getUser(parseInt(telegram_id)||0, '');
-  if (!user || user.webhook_key !== api_key) return res.status(401).json({ error: 'Unauthorized' });
-  if (!user.approved && parseInt(telegram_id) !== ADMIN_ID) return res.status(403).json({ error: 'Niet goedgekeurd' });
-  if (user.credits < 2) return res.status(402).json({ error: 'Onvoldoende berichten (2 nodig voor A/B)' });
+// API endpoints voor webapp
+app.post('/api/compose', async function(req, res) {
+  var tid = parseInt(req.body.telegram_id) || 0;
+  var apiKey = req.body.api_key;
+  var mailText = req.body.mail_text || '';
+  var style = req.body.style || 'default';
+  var u = await getUser(tid, '');
+  if (!u || u.webhook_key !== apiKey) return res.status(401).json({ error: 'Unauthorized' });
+  if (!u.approved && tid !== ADMIN_ID) return res.status(403).json({ error: 'Niet goedgekeurd' });
+  if (u.credits < 1) return res.status(402).json({ error: 'Onvoldoende berichten' });
   try {
-    const systemPrompt = await buildSystemPrompt(user, style||'default');
-    const [formal, informal] = await Promise.all([
-      callClaude('Schrijf een FORMEEL conceptantwoord (gebruik u):\n\n' + mail_text, systemPrompt),
-      callClaude('Schrijf een INFORMEEL conceptantwoord (gebruik je):\n\n' + mail_text, systemPrompt)
+    var sys = await buildSystemPrompt(u, style);
+    var concept = await callClaude('Schrijf een conceptantwoord:\n\n' + mailText, sys);
+    await saveUser(tid, { credits: u.credits - 1, concept_count: u.concept_count + 1 });
+    await addHistory(tid, 'Mail via app', concept);
+    res.json({ concept: concept, credits_remaining: u.credits - 1, sentiment: 'normaal' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/compose-ab', async function(req, res) {
+  var tid = parseInt(req.body.telegram_id) || 0;
+  var apiKey = req.body.api_key;
+  var mailText = req.body.mail_text || '';
+  var u = await getUser(tid, '');
+  if (!u || u.webhook_key !== apiKey) return res.status(401).json({ error: 'Unauthorized' });
+  if (u.credits < 2) return res.status(402).json({ error: 'Minimaal 2 berichten nodig' });
+  try {
+    var sys = await buildSystemPrompt(u);
+    var results = await Promise.all([
+      callClaude('Schrijf een FORMEEL conceptantwoord, gebruik u:\n\n' + mailText, sys),
+      callClaude('Schrijf een INFORMEEL conceptantwoord, gebruik je:\n\n' + mailText, sys)
     ]);
-    await saveUser(parseInt(telegram_id)||0, { credits: user.credits - 2, concept_count: user.concept_count + 2 });
-    res.json({ formal, informal });
+    await saveUser(tid, { credits: u.credits - 2, concept_count: u.concept_count + 2 });
+    res.json({ formal: results[0], informal: results[1] });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/refine -- concept verfijnen
-app.post('/api/refine', async (req, res) => {
-  const { telegram_id, api_key, concept, instruction } = req.body;
-  const user = await getUser(parseInt(telegram_id)||0, '');
-  if (!user || user.webhook_key !== api_key) return res.status(401).json({ error: 'Unauthorized' });
-  if (!concept || !instruction) return res.status(400).json({ error: 'concept en instruction vereist' });
+app.post('/api/refine', async function(req, res) {
+  var tid = parseInt(req.body.telegram_id) || 0;
+  var apiKey = req.body.api_key;
+  var concept = req.body.concept || '';
+  var instruction = req.body.instruction || '';
+  var u = await getUser(tid, '');
+  if (!u || u.webhook_key !== apiKey) return res.status(401).json({ error: 'Unauthorized' });
   try {
-    const refined = await callClaude(
-      'Pas dit e-mail concept aan op basis van de instructie. Geef ALLEEN het resultaat terug.\n\nInstructie: ' + instruction + '\n\nConcept:\n' + concept,
-      'Pas het e-mail concept aan. Geef alleen het resultaat terug.'
-    );
-    res.json({ refined });
+    var refined = await callClaude('Pas dit concept aan. Instructie: ' + instruction + '\n\nConcept:\n' + concept, 'Pas het e-mail concept aan en geef alleen het resultaat terug.');
+    res.json({ refined: refined });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/train-style -- stijl trainen via webapp
-app.post('/api/train-style', async (req, res) => {
-  const { telegram_id, api_key, name, mails } = req.body;
-  const user = await getUser(parseInt(telegram_id)||0, '');
-  if (!user || user.webhook_key !== api_key) return res.status(401).json({ error: 'Unauthorized' });
-  if (user.credits < 3) return res.status(402).json({ error: 'Minimaal 3 berichten nodig' });
-  if (!mails || mails.length < 50) return res.status(400).json({ error: 'Te weinig tekst' });
+app.post('/api/train-style', async function(req, res) {
+  var tid = parseInt(req.body.telegram_id) || 0;
+  var apiKey = req.body.api_key;
+  var name = req.body.name || 'default';
+  var mails = req.body.mails || '';
+  var u = await getUser(tid, '');
+  if (!u || u.webhook_key !== apiKey) return res.status(401).json({ error: 'Unauthorized' });
+  if (u.credits < 3) return res.status(402).json({ error: 'Minimaal 3 berichten nodig' });
   try {
-    const profile = await callClaude('Analyseer schrijfstijl. Max 200 woorden: toon, je/u, aanhef, afsluiting, zinslengte.\n\nE-MAILS:\n' + mails);
-    const profiles = JSON.parse(user.style_profiles || '{"default":""}');
-    profiles[name || 'default'] = profile;
-    await saveUser(parseInt(telegram_id)||0, { style_profiles: JSON.stringify(profiles), credits: user.credits - 3 });
-    res.json({ success: true, profile });
+    var profile = await callClaude('Analyseer schrijfstijl in max 200 woorden. Beschrijf toon, aanhef, afsluiting, zinslengte.\n\nE-MAILS:\n' + mails);
+    var profiles = JSON.parse(u.style_profiles || '{"default":""}');
+    profiles[name] = profile;
+    await saveUser(tid, { style_profiles: JSON.stringify(profiles), credits: u.credits - 3 });
+    res.json({ success: true, profile: profile });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Bestaande compose endpoint
-app.post('/api/compose', async (req, res) => {
-  const { telegram_id, api_key, mail_text } = req.body;
-  const user = await getUser(parseInt(telegram_id), '');
-  if (!user || user.webhook_key !== api_key) return res.status(401).json({ error: 'Unauthorized' });
-  if (!user.approved) return res.status(403).json({ error: 'Niet goedgekeurd' });
-  if (user.credits < 1) return res.status(402).json({ error: 'Onvoldoende berichten' });
-  try {
-    const concept = await callClaude('Schrijf een conceptantwoord:\n\n' + mail_text, await buildSystemPrompt(user));
-    await saveUser(parseInt(telegram_id), { credits: user.credits - 1, concept_count: user.concept_count + 1 });
-    res.json({ concept, credits_remaining: user.credits - 1 });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('MailMate v4.1 draait op poort ' + PORT);
+app.listen(PORT, '0.0.0.0', function() {
+  console.log('MailMate v5 draait op poort ' + PORT);
   if (WEBHOOK_URL) {
     bot.setWebHook(WEBHOOK_URL + '/bot' + BOT_TOKEN)
-      .then(() => console.log('Webhook actief'))
-      .catch(e => console.error('Webhook fout:', e.message));
+      .then(function() { console.log('Webhook actief'); })
+      .catch(function(e) { console.error('Webhook fout:', e.message); });
   }
 });
 
-// ====================================================
-// BEVEILIGING
-// ====================================================
+// ????????????????????????????????????????
+// SUPABASE FUNCTIES
+// ????????????????????????????????????????
 
-// Rate limiting in geheugen
-const rateLimits = new Map(); // userId -> { count, resetAt }
-
-function checkRateLimit(userId) {
-  const now = Date.now();
-  const limit = rateLimits.get(userId);
-  if (!limit || now > limit.resetAt) {
-    rateLimits.set(userId, { count: 1, resetAt: now + 60 * 60 * 1000 });
-    return true;
-  }
-  if (limit.count >= MAX_PER_HOUR) return false;
-  limit.count++;
-  return true;
+function generateKey() {
+  return 'mm_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
 }
 
-function getRateLimitRemaining(userId) {
-  const limit = rateLimits.get(userId);
-  if (!limit) return MAX_PER_HOUR;
-  return Math.max(0, MAX_PER_HOUR - limit.count);
+function fallback(tid, name) {
+  return {
+    telegram_id: tid, name: name || 'Gebruiker', credits: 10, concept_count: 0,
+    style_profiles: '{"default":""}', active_style: 'default', user_knowledge: '',
+    onboarded: false, approved: false, vakgebied: '', doel: '', toon_voorkeur: '',
+    webhook_key: ''
+  };
 }
 
-// Toegangscontrole
-async function isApproved(telegramId) {
-  if (telegramId === ADMIN_ID) return true;
-  const user = await getUser(telegramId, '');
-  return user && user.approved === true;
-}
-
-// ====================================================
-// SUPABASE
-// ====================================================
-function generateApiKey() { return 'mm_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2); }
-
-function fallbackUser(telegramId, name) {
-  return { telegram_id: telegramId, name: name||'Gebruiker', credits: 0, concept_count: 0,
-           style_profiles: '{"default":""}', active_style: 'default', user_knowledge: '',
-           onboarded: false, approved: false, vakgebied: '', doel: '', toon_voorkeur: '', webhook_key: '' };
-}
-
-async function getUser(telegramId, name) {
+async function getUser(tid, name) {
   try {
-    const { data } = await supabase.from('users').select('*').eq('telegram_id', telegramId).single();
-    if (data) return data;
-    const { data: newUser, error } = await supabase.from('users')
-      .insert({ telegram_id: telegramId, name: name||'Gebruiker', credits: 0, concept_count: 0,
-                style_profiles: JSON.stringify({ default: '' }), active_style: 'default',
-                user_knowledge: '', onboarded: false, approved: false,
-                vakgebied: '', doel: '', toon_voorkeur: '', webhook_key: generateApiKey() })
-      .select().single();
-    if (error) console.error('Insert fout:', JSON.stringify(error));
-    return newUser || fallbackUser(telegramId, name);
-  } catch(e) { console.error('getUser:', e.message); return fallbackUser(telegramId, name); }
+    var result = await sb.from('users').select('*').eq('telegram_id', tid).single();
+    if (result.data) return result.data;
+    var ins = await sb.from('users').insert({
+      telegram_id: tid, name: name || 'Gebruiker', credits: 10, concept_count: 0,
+      style_profiles: JSON.stringify({ default: '' }), active_style: 'default',
+      user_knowledge: '', onboarded: false, approved: false,
+      vakgebied: '', doel: '', toon_voorkeur: '', webhook_key: generateKey()
+    }).select().single();
+    if (ins.error) console.error('Insert fout:', ins.error.message);
+    return ins.data || fallback(tid, name);
+  } catch(e) {
+    console.error('getUser fout:', e.message);
+    return fallback(tid, name);
+  }
 }
 
-async function saveUser(telegramId, updates) {
-  await supabase.from('users').update({ ...updates, updated_at: new Date().toISOString() }).eq('telegram_id', telegramId);
+async function saveUser(tid, updates) {
+  updates.updated_at = new Date().toISOString();
+  await sb.from('users').update(updates).eq('telegram_id', tid);
 }
 
-async function getPendingUsers() {
-  const { data } = await supabase.from('users').select('*').eq('approved', false).eq('onboarded', false).order('created_at', { ascending: false });
-  return data || [];
+async function addHistory(tid, subject, concept) {
+  await sb.from('history').insert({
+    telegram_id: tid, subject: subject, concept: concept || '',
+    created_at: new Date().toISOString()
+  });
 }
 
-async function getApprovedUsers() {
-  const { data } = await supabase.from('users').select('*').eq('approved', true).order('created_at', { ascending: false });
-  return data || [];
-}
-
-async function addHistory(telegramId, subject, concept) {
-  await supabase.from('history').insert({ telegram_id: telegramId, subject, concept: concept||'', created_at: new Date().toISOString() });
-}
-
-async function getHistory(telegramId, limit) {
-  const { data } = await supabase.from('history').select('*').eq('telegram_id', telegramId).order('created_at', { ascending: false }).limit(limit||10);
-  return data || [];
+async function getHistory(tid, limit) {
+  var result = await sb.from('history').select('*').eq('telegram_id', tid).order('created_at', { ascending: false }).limit(limit || 8);
+  return result.data || [];
 }
 
 async function getAllUsers() {
-  const { data } = await supabase.from('users').select('*').order('created_at', { ascending: false });
-  return data || [];
-}
-
-async function upsertClient(telegramId, email, subject, body) {
-  if (!email) return;
-  const { data: existing } = await supabase.from('clients').select('*').eq('telegram_id', telegramId).eq('email', email).single();
-  if (existing) {
-    await supabase.from('clients').update({ contact_count: (existing.contact_count||0)+1, last_subject: subject, last_contact: new Date().toISOString() }).eq('id', existing.id);
-  } else {
-    await supabase.from('clients').insert({ telegram_id: telegramId, email, last_subject: subject, contact_count: 1, last_contact: new Date().toISOString(), notes: '' });
-  }
-}
-
-async function getClient(telegramId, email) {
-  if (!email) return null;
-  const { data } = await supabase.from('clients').select('*').eq('telegram_id', telegramId).eq('email', email).single();
-  return data;
-}
-
-async function getClients(telegramId) {
-  const { data } = await supabase.from('clients').select('*').eq('telegram_id', telegramId).order('last_contact', { ascending: false });
-  return data || [];
-}
-
-async function getTemplates(telegramId) {
-  const { data } = await supabase.from('templates').select('*').eq('telegram_id', telegramId).order('created_at', { ascending: false });
-  return data || [];
-}
-
-async function saveTemplate(telegramId, name, content) {
-  await supabase.from('templates').insert({ telegram_id: telegramId, name, content, created_at: new Date().toISOString() });
-}
-
-async function deleteTemplate(id) {
-  await supabase.from('templates').delete().eq('id', id);
+  var result = await sb.from('users').select('*').order('created_at', { ascending: false });
+  return result.data || [];
 }
 
 async function getGlobalKnowledge() {
-  const { data } = await supabase.from('global_knowledge').select('content').order('created_at', { ascending: true });
-  return data ? data.map(d => d.content).join('\n\n---\n\n') : '';
+  var result = await sb.from('global_knowledge').select('content').order('created_at', { ascending: true });
+  if (!result.data || !result.data.length) return '';
+  return result.data.map(function(d) { return d.content; }).join('\n\n---\n\n');
 }
 
 async function addGlobalKnowledge(title, content) {
-  await supabase.from('global_knowledge').insert({ title, content, created_at: new Date().toISOString() });
+  await sb.from('global_knowledge').insert({ title: title, content: content, created_at: new Date().toISOString() });
 }
 
 async function listGlobalKnowledge() {
-  const { data } = await supabase.from('global_knowledge').select('id, title').order('created_at', { ascending: false });
-  return data || [];
+  var result = await sb.from('global_knowledge').select('id, title').order('created_at', { ascending: false });
+  return result.data || [];
 }
 
 async function deleteGlobalKnowledge(id) {
-  await supabase.from('global_knowledge').delete().eq('id', id);
+  await sb.from('global_knowledge').delete().eq('id', id);
 }
 
-async function scheduleFollowUp(telegramId, subject) {
-  await supabase.from('followups').insert({ telegram_id: telegramId, subject, remind_at: new Date(Date.now() + 7*24*60*60*1000).toISOString(), sent: false });
+async function upsertClient(tid, email, subject) {
+  if (!email) return;
+  var result = await sb.from('clients').select('*').eq('telegram_id', tid).eq('email', email).single();
+  if (result.data) {
+    await sb.from('clients').update({
+      contact_count: (result.data.contact_count || 0) + 1,
+      last_subject: subject,
+      last_contact: new Date().toISOString()
+    }).eq('id', result.data.id);
+  } else {
+    await sb.from('clients').insert({
+      telegram_id: tid, email: email, last_subject: subject,
+      contact_count: 1, last_contact: new Date().toISOString(), notes: ''
+    });
+  }
 }
 
-// ====================================================
-// AI
-// ====================================================
-async function analyzeMail(mailText) {
-  try {
-    const result = await callClaude(
-      'Analyseer deze e-mail. Geef ALLEEN valide JSON:\n{"type":"klacht|offerte|info|opvolging|vraag|bedankt|overig","sentiment":"positief|neutraal|negatief|urgent","urgentie":"laag|middel|hoog","kernvraag":"max 10 woorden"}\n\nE-MAIL:\n' + mailText.slice(0, 1500),
-      'Analyseer e-mails en retourneer alleen valide JSON.'
-    );
-    return JSON.parse(result.replace(/```json|```/g, '').trim());
-  } catch(e) { return { type: 'overig', sentiment: 'neutraal', urgentie: 'middel', kernvraag: '' }; }
+async function getTemplates(tid) {
+  var result = await sb.from('templates').select('*').eq('telegram_id', tid).order('created_at', { ascending: false });
+  return result.data || [];
 }
 
-async function generateSubjectLine(originalSubject, concept) {
-  try {
-    const result = await callClaude(
-      'Genereer een professionele onderwerpregel. Geef ALLEEN de onderwerpregel terug.\n\nOrigineel: ' + (originalSubject||'onbekend') + '\n\nConcept:\n' + concept.slice(0, 400),
-      'Genereer bondige professionele e-mail onderwerpregels.'
-    );
-    return result.trim().replace(/^"(.*)"$/, '$1');
-  } catch(e) { return originalSubject ? 'Re: ' + originalSubject : 'Antwoord op uw bericht'; }
+async function saveTemplate(tid, name, content) {
+  await sb.from('templates').insert({ telegram_id: tid, name: name, content: content, created_at: new Date().toISOString() });
 }
 
-async function generateABVersions(mailText, systemPrompt) {
-  const [formal, informal] = await Promise.all([
-    callClaude('Schrijf een FORMEEL conceptantwoord:\n\n' + mailText, systemPrompt + '\n\nEXTRA: Schrijf extra formeel, gebruik "u".'),
-    callClaude('Schrijf een INFORMEEL conceptantwoord:\n\n' + mailText, systemPrompt + '\n\nEXTRA: Schrijf toegankelijker en informeler.')
-  ]);
-  return { formal, informal };
+async function deleteTemplate(id) {
+  await sb.from('templates').delete().eq('id', id);
 }
 
-async function buildSystemPrompt(user, styleName, clientInfo) {
-  styleName = styleName || 'default';
-  const profiles      = JSON.parse(user.style_profiles || '{"default":""}');
-  const activeProfile = profiles[styleName] || profiles['default'] || '';
-  const globalExtra   = await getGlobalKnowledge();
-  let clientContext = '';
-  if (clientInfo) clientContext = '\n\nKLANTINFO:\nE-mail: ' + clientInfo.email + '\nEerder contact: ' + (clientInfo.contact_count||0) + ' keer\nLaatst over: ' + (clientInfo.last_subject||'n.v.t.');
-
-  return 'Je bent een professionele e-mail assistent. Schrijf conceptantwoorden in de schrijfstijl van de gebruiker.\n\nSCHRIJFSTIJL:\n' + (activeProfile||'Schrijf professioneel en vriendelijk.') + '\n\nVAKGEBIED: ' + (user.vakgebied||'Algemeen') + '\nTOON: ' + (user.toon_voorkeur||'Professioneel') + clientContext + (globalExtra ? '\n\nKENNISBANK:\n' + globalExtra : '') + (user.user_knowledge ? '\n\nEIGEN KENNIS:\n' + user.user_knowledge : '') + '\n\nREGEL: Geef ALLEEN het conceptantwoord terug, geen uitleg.';
+async function scheduleFollowUp(tid, subject) {
+  await sb.from('followups').insert({
+    telegram_id: tid, subject: subject,
+    remind_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    sent: false
+  });
 }
+
+// ????????????????????????????????????????
+// AI FUNCTIES
+// ????????????????????????????????????????
 
 async function callClaude(userMsg, systemMsg, maxTokens) {
-  maxTokens = maxTokens || 1200;
-  const params = { model: 'claude-sonnet-4-20250514', max_tokens: maxTokens, messages: [{ role: 'user', content: userMsg }] };
+  var params = {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: maxTokens || 1200,
+    messages: [{ role: 'user', content: userMsg }]
+  };
   if (systemMsg) params.system = systemMsg;
-  const res = await anthropic.messages.create(params);
-  return res.content.map(b => b.text || '').join('');
+  var res = await anthropic.messages.create(params);
+  return res.content.map(function(b) { return b.text || ''; }).join('');
 }
 
-async function createStripeCheckout(telegramId, credits, priceEur) {
-  if (!STRIPE_ACTIVE) return null;
-  const session = await stripe.checkout.sessions.create({
+async function buildSystemPrompt(u, styleName) {
+  styleName = styleName || u.active_style || 'default';
+  var profiles = JSON.parse(u.style_profiles || '{"default":""}');
+  var profile = profiles[styleName] || profiles['default'] || '';
+  var globalKnowledge = await getGlobalKnowledge();
+
+  var prompt = 'Je bent een professionele e-mail assistent. Schrijf conceptantwoorden in de stijl van de gebruiker.\n\n';
+  prompt += 'SCHRIJFSTIJL:\n' + (profile || 'Schrijf professioneel en vriendelijk.') + '\n\n';
+  prompt += 'VAKGEBIED: ' + (u.vakgebied || 'Algemeen') + '\n';
+  prompt += 'TOON: ' + (u.toon_voorkeur || 'Professioneel') + '\n\n';
+  if (globalKnowledge) prompt += 'KENNISBANK:\n' + globalKnowledge + '\n\n';
+  if (u.user_knowledge) prompt += 'EIGEN KENNIS:\n' + u.user_knowledge + '\n\n';
+  prompt += 'REGEL: Geef ALLEEN het conceptantwoord terug, geen uitleg.';
+  return prompt;
+}
+
+async function createStripeCheckout(tid, credits, priceEur) {
+  if (!stripe) return null;
+  var session = await stripe.checkout.sessions.create({
     payment_method_types: ['card', 'ideal'],
     line_items: [{ price_data: { currency: 'eur', product_data: { name: 'MailMate ' + credits + ' berichten' }, unit_amount: priceEur * 100 }, quantity: 1 }],
     mode: 'payment',
     success_url: WEBHOOK_URL + '/betaling-succes',
-    cancel_url:  WEBHOOK_URL + '/betaling-geannuleerd',
-    metadata: { telegram_id: telegramId.toString(), credits: credits.toString() },
+    cancel_url: WEBHOOK_URL + '/betaling-geannuleerd',
+    metadata: { telegram_id: tid.toString(), credits: credits.toString() }
   });
   return session.url;
 }
 
-// ====================================================
-// SESSION
-// ====================================================
-const sessionState = new Map();
-function getState(id) {
-  if (!sessionState.has(id)) sessionState.set(id, { step: 'idle', lastConcept: '', lastIncoming: '', activeStyle: 'default', trainStyleName: null });
-  return sessionState.get(id);
+// ????????????????????????????????????????
+// RATE LIMITING
+// ????????????????????????????????????????
+var rateLimits = {};
+
+function checkRate(tid) {
+  var now = Date.now();
+  if (!rateLimits[tid] || now > rateLimits[tid].reset) {
+    rateLimits[tid] = { count: 1, reset: now + 60 * 60 * 1000 };
+    return true;
+  }
+  if (rateLimits[tid].count >= MAX_PER_HOUR) return false;
+  rateLimits[tid].count++;
+  return true;
 }
 
-// ====================================================
-// KEYBOARDS
-// ====================================================
-const isAdmin = (id) => id === ADMIN_ID;
+// ????????????????????????????????????????
+// SESSION STATE
+// ????????????????????????????????????????
+var states = {};
 
-function mainKeyboard(userId) {
-  const b = [
-    [{ text: 'Concept schrijven',  callback_data: 'compose'   }],
-    [{ text: 'Meerdere mails',     callback_data: 'batch'     }],
-    [{ text: 'Stijl trainen',      callback_data: 'train'     }],
-    [{ text: 'Kennisbank',         callback_data: 'myknow'    }],
-    [{ text: 'Klanten',            callback_data: 'clients'   }],
+function getState(tid) {
+  if (!states[tid]) states[tid] = { step: 'idle', lastConcept: '', lastMail: '', style: 'default', trainName: null };
+  return states[tid];
+}
+
+var isAdmin = function(tid) { return tid === ADMIN_ID; };
+
+// ????????????????????????????????????????
+// KEYBOARDS
+// ????????????????????????????????????????
+function mainKeyboard(tid) {
+  var rows = [
+    [{ text: 'Concept schrijven', callback_data: 'compose' }],
+    [{ text: 'Meerdere mails', callback_data: 'batch' }],
+    [{ text: 'Stijl trainen', callback_data: 'train' }],
+    [{ text: 'Kennisbank', callback_data: 'myknow' }],
     [{ text: 'Opgeslagen antwoorden', callback_data: 'templates' }],
-    [{ text: 'Koppeling instellen', callback_data: 'webhook'  }],
-    [{ text: 'Geschiedenis',       callback_data: 'history'   }],
-    [{ text: 'Berichten kopen',    callback_data: 'credits'   }],
-    [{ text: 'Open in app',        web_app: { url: MINI_APP_URL } }],
+    [{ text: 'Koppeling instellen', callback_data: 'webhook' }],
+    [{ text: 'Geschiedenis', callback_data: 'history' }],
+    [{ text: 'Berichten kopen', callback_data: 'credits' }]
   ];
-  if (isAdmin(userId)) b.push([{ text: 'Beheer', callback_data: 'admin' }]);
-  return { inline_keyboard: b };
+  if (MINI_APP_URL) rows.push([{ text: 'Open in app', web_app: { url: MINI_APP_URL } }]);
+  if (isAdmin(tid)) rows.push([{ text: 'Beheer', callback_data: 'admin' }]);
+  return { inline_keyboard: rows };
 }
 
 function creditsKeyboard() {
   return { inline_keyboard: [
     [{ text: '50 berichten - 9 euro', callback_data: 'buy_50_9' }, { text: '200 berichten - 29 euro', callback_data: 'buy_200_29' }],
-    [{ text: '600 berichten - 79 euro', callback_data: 'buy_600_79' }],
+    [{ text: '600 berichten - 79 euro', callback_data: 'buy_600_79' }]
   ]};
 }
 
-// ====================================================
+// ????????????????????????????????????????
 // ONBOARDING
-// ====================================================
-async function startOnboarding(userId, firstName) {
-  await bot.sendMessage(userId,
-    '*Welkom bij MailMate, ' + firstName + '!*\n\nIk ben jouw persoonlijke e-mail assistent. Ik leer hoe jij schrijft en zet automatisch conceptantwoorden klaar.\n\n*Stap 1 van 4*\n\nIn welk vakgebied werk je en wat doe je?\n\nBijvoorbeeld:\n- Assurantiekantoor - klantadvies\n- Bouwbedrijf - offertes en projecten\n- Webshop - klantenservice\n\n_Tik /skip als je dit later wil invullen._',
-    { parse_mode: 'Markdown' }
+// ????????????????????????????????????????
+async function startOnboarding(tid, name) {
+  await bot.sendMessage(tid,
+    'Welkom bij MailMate, ' + name + '!\n\n' +
+    'Ik ben jouw persoonlijke e-mail assistent.\n\n' +
+    'Stap 1 van 4 - Vakgebied\n\n' +
+    'In welk vakgebied werk je?\n\n' +
+    'Bijv: Assurantiekantoor - klantadvies\n' +
+    'Of: Bouwbedrijf - offertes\n\n' +
+    'Tik /skip om dit later in te stellen.'
   );
-  getState(userId).step = 'onboard_vakgebied';
+  getState(tid).step = 'onboard_vakgebied';
 }
 
-bot.onText(/\/skip/, async (msg) => {
-  const { id, first_name } = msg.from;
-  const s = getState(id);
+// ????????????????????????????????????????
+// /start
+// ????????????????????????????????????????
+bot.onText(/\/start/, async function(msg) {
+  var tid = msg.from.id;
+  var name = msg.from.first_name || 'Gebruiker';
+  var u;
+  try { u = await getUser(tid, name); } catch(e) { u = fallback(tid, name); }
+  if (!u) u = fallback(tid, name);
+
+  if (isAdmin(tid) && !u.approved) {
+    await saveUser(tid, { approved: true, credits: 100 });
+    u.approved = true;
+    u.credits = 100;
+  }
+
+  if (!u.approved) {
+    getState(tid).step = 'awaiting_code';
+    bot.sendMessage(tid, 'Welkom bij MailMate!\n\nVoer de toegangscode in om te starten.\n\nGeen code? Vraag toegang aan via de website.');
+    return;
+  }
+
+  if (!u.onboarded) {
+    await startOnboarding(tid, name);
+    return;
+  }
+
+  bot.sendMessage(tid, 'Welkom terug, ' + name + '!\n\nSaldo: ' + u.credits + ' berichten', { reply_markup: mainKeyboard(tid) });
+});
+
+// /skip
+bot.onText(/\/skip/, async function(msg) {
+  var tid = msg.from.id;
+  var s = getState(tid);
   if (s.step === 'onboard_vakgebied') {
-    await saveUser(id, { vakgebied: 'Algemeen' });
+    await saveUser(tid, { vakgebied: 'Algemeen' });
     s.step = 'onboard_toon';
-    bot.sendMessage(id, '*Stap 2 van 4 -- Toon*\n\nHoe schrijf jij normaal?',
-      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-        [{ text: 'Formeel (u)', callback_data: 'toon_formeel' }],
-        [{ text: 'Informeel (je)', callback_data: 'toon_informeel' }],
-        [{ text: 'Hangt van de klant af', callback_data: 'toon_mix' }],
-      ]}}
-    );
+    bot.sendMessage(tid, 'Stap 2 van 4 - Toon\n\nHoe schrijf jij normaal?', { reply_markup: { inline_keyboard: [
+      [{ text: 'Formeel (u)', callback_data: 'toon_formeel' }],
+      [{ text: 'Informeel (je)', callback_data: 'toon_informeel' }],
+      [{ text: 'Mix', callback_data: 'toon_mix' }]
+    ]}});
   } else if (s.step === 'onboard_style') {
     s.step = 'onboard_knowledge';
-    bot.sendMessage(id, '*Stap 4 van 4 -- Eigen kennis*\n\nVoeg informatie toe die ik moet weten over jouw bedrijf, producten of diensten. Of tik /skip.', { parse_mode: 'Markdown' });
+    bot.sendMessage(tid, 'Stap 4 van 4 - Kennisbank\n\nVoeg info toe over je bedrijf, of tik /skip.');
   } else if (s.step === 'onboard_knowledge') {
-    await saveUser(id, { onboarded: true });
+    await saveUser(tid, { onboarded: true });
     s.step = 'idle';
-    bot.sendMessage(id, '*Klaar! Je bent ingesteld.*\n\nStuur me een e-mail en ik schrijf direct een conceptantwoord in jouw stijl.', { parse_mode: 'Markdown', reply_markup: mainKeyboard(id) });
+    bot.sendMessage(tid, 'Klaar! Je agent is ingesteld.', { reply_markup: mainKeyboard(tid) });
   }
 });
 
-// ====================================================
-// /START -- MET TOEGANGSCONTROLE
-// ====================================================
-bot.onText(/\/start/, async (msg) => {
-  const { id, first_name } = msg.from;
-
-  // Admin altijd toegang
-  if (isAdmin(id)) {
-    let user;
-    try { user = await getUser(id, first_name); }
-    catch(e) { user = fallbackUser(id, first_name); }
-    if (!user.onboarded) { await startOnboarding(id, first_name); return; }
-    bot.sendMessage(id, '*Welkom terug, ' + first_name + '!*\n\nSaldo: *' + user.credits + ' berichten*', { parse_mode: 'Markdown', reply_markup: mainKeyboard(id) });
-    return;
-  }
-
-  // Controleer of gebruiker al bestaat en goedgekeurd is
-  let user;
-  try { user = await getUser(id, first_name); }
-  catch(e) { user = fallbackUser(id, first_name); }
-
-  if (user.approved) {
-    // Goedgekeurde gebruiker
-    if (!user.onboarded) { await startOnboarding(id, first_name); return; }
-    bot.sendMessage(id, '*Welkom terug, ' + first_name + '!*\n\nSaldo: *' + user.credits + ' berichten*', { parse_mode: 'Markdown', reply_markup: mainKeyboard(id) });
-    return;
-  }
-
-  // Nieuwe gebruiker -- vraag toegangscode
-  getState(id).step = 'awaiting_access_code';
-  bot.sendMessage(id,
-    '*Welkom bij MailMate*\n\nVoer de toegangscode in om te starten.\n\n_Geen toegangscode? Neem contact op via de website._',
-    { parse_mode: 'Markdown' }
-  );
-});
-
-// ====================================================
+// ????????????????????????????????????????
 // CALLBACKS
-// ====================================================
-bot.on('callback_query', async (query) => {
-  const { id: userId, first_name } = query.from;
-  const data = query.data;
-  const s    = getState(userId);
+// ????????????????????????????????????????
+bot.on('callback_query', async function(query) {
+  var tid = query.from.id;
+  var name = query.from.first_name || 'Gebruiker';
+  var data = query.data;
+  var s = getState(tid);
   bot.answerCallbackQuery(query.id);
 
-  // Toegangscontrole op alle callbacks
-  if (!isAdmin(userId)) {
-    const approved = await isApproved(userId);
-    if (!approved) {
-      bot.sendMessage(userId, 'Je hebt nog geen toegang. Tik /start en voer je toegangscode in.');
+  // Toegangscontrole
+  if (!isAdmin(tid)) {
+    var check = await getUser(tid, name);
+    if (!check || !check.approved) {
+      bot.sendMessage(tid, 'Je hebt nog geen toegang. Tik /start en voer je code in.');
       return;
     }
   }
 
-  const user = await getUser(userId, first_name);
+  var u = await getUser(tid, name);
 
   // Toon onboarding
   if (data.startsWith('toon_')) {
-    const map = { toon_formeel: 'Formeel', toon_informeel: 'Informeel', toon_mix: 'Mix' };
-    await saveUser(userId, { toon_voorkeur: map[data]||'Professioneel' });
+    var toonMap = { toon_formeel: 'Formeel', toon_informeel: 'Informeel', toon_mix: 'Mix' };
+    await saveUser(tid, { toon_voorkeur: toonMap[data] || 'Professioneel' });
     s.step = 'onboard_style';
-    bot.sendMessage(userId, '*Stap 3 van 4 -- Schrijfstijl*\n\nStuur 5 of meer e-mails die jij zelf hebt geschreven. Ik leer hieruit precies hoe jij schrijft.\n\nScheid de mails met: ----\n\n_Tik /skip als je dit later wil doen._', { parse_mode: 'Markdown' });
+    bot.sendMessage(tid, 'Toon opgeslagen.\n\nStap 3 van 4 - Schrijfstijl\n\nStuur 5+ eigen e-mails gescheiden door --\n\nOf tik /skip.');
     return;
   }
 
-  // Follow-up
-  if (data.startsWith('followup_done_')) {
-    const fid = data.replace('followup_done_', '');
-    if (fid) await supabase.from('followups').update({ sent: true }).eq('id', fid);
-    bot.sendMessage(userId, 'Gemarkeerd als verzonden.', { reply_markup: mainKeyboard(userId) });
+  if (data === 'followup_done') {
+    bot.sendMessage(tid, 'Gemarkeerd als verzonden.', { reply_markup: mainKeyboard(tid) });
     return;
   }
 
-  // COMPOSE
   if (data === 'compose') {
-    if (user.credits < 1) return bot.sendMessage(userId, 'Je hebt geen berichten meer.\n\nKoop berichten om door te gaan.', { reply_markup: creditsKeyboard() });
-    if (!checkRateLimit(userId)) return bot.sendMessage(userId, 'Je hebt het maximum aantal concepten per uur bereikt. Probeer het over een uur opnieuw.');
-    const profiles   = JSON.parse(user.style_profiles || '{"default":""}');
-    const styleNames = Object.keys(profiles).filter(k => profiles[k]);
+    if (u.credits < 1) { bot.sendMessage(tid, 'Geen berichten meer.', { reply_markup: creditsKeyboard() }); return; }
+    if (!checkRate(tid)) { bot.sendMessage(tid, 'Maximum bereikt. Probeer over een uur opnieuw.'); return; }
+    var profs = JSON.parse(u.style_profiles || '{"default":""}');
+    var styleNames = Object.keys(profs).filter(function(k) { return profs[k]; });
     if (styleNames.length > 1) {
       s.step = 'awaiting_mail';
-      return bot.sendMessage(userId, 'Kies een schrijfstijl:', { reply_markup: { inline_keyboard: styleNames.map(n => [{ text: n, callback_data: 'compose_style_' + n }]) } });
+      return bot.sendMessage(tid, 'Kies een stijl:', { reply_markup: { inline_keyboard: styleNames.map(function(n) { return [{ text: n, callback_data: 'style_' + n }]; }) }});
     }
     s.step = 'awaiting_mail';
-    s.activeStyle = styleNames[0] || 'default';
-    bot.sendMessage(userId, '*Inkomende e-mail*\n\nPlak de tekst van de e-mail waarop je wil antwoorden.', { parse_mode: 'Markdown' });
+    s.style = styleNames[0] || 'default';
+    bot.sendMessage(tid, 'Plak de e-mail waarop je wil antwoorden.');
   }
 
-  else if (data.startsWith('compose_style_')) {
-    s.activeStyle = data.replace('compose_style_', '');
+  else if (data.startsWith('style_')) {
+    s.style = data.replace('style_', '');
     s.step = 'awaiting_mail';
-    bot.sendMessage(userId, 'Plak de e-mail tekst.', { parse_mode: 'Markdown' });
+    bot.sendMessage(tid, 'Stijl: ' + s.style + '\n\nPlak de e-mail.');
   }
 
-  // BATCH
   else if (data === 'batch') {
-    if (user.credits < 1) return bot.sendMessage(userId, 'Geen berichten meer.', { reply_markup: creditsKeyboard() });
+    if (u.credits < 1) { bot.sendMessage(tid, 'Geen berichten meer.', { reply_markup: creditsKeyboard() }); return; }
     s.step = 'awaiting_batch';
-    bot.sendMessage(userId, '*Meerdere mails verwerken*\n\nPlak meerdere e-mails in ??n bericht. Zet tussen elke mail:\n`===MAIL===`\n\n_Per e-mail wordt 1 bericht gebruikt._', { parse_mode: 'Markdown' });
+    bot.sendMessage(tid, 'Meerdere mails verwerken\n\nPlak mails en zet ===MAIL=== tussen elke mail.\n\n1 bericht per mail.');
   }
 
-  // A/B VERSIES
-  else if (data === 'ab_versions') {
-    if (!s.lastIncoming) return bot.sendMessage(userId, 'Geen e-mail beschikbaar.', { reply_markup: mainKeyboard(userId) });
-    if (user.credits < 2) return bot.sendMessage(userId, 'Twee versies kost 2 berichten.', { reply_markup: creditsKeyboard() });
-    const load = await bot.sendMessage(userId, '_Twee versies maken..._', { parse_mode: 'Markdown' });
-    try {
-      const systemPrompt = await buildSystemPrompt(user, s.activeStyle || 'default');
-      const { formal, informal } = await generateABVersions(s.lastIncoming, systemPrompt);
-      await saveUser(userId, { credits: user.credits - 2, concept_count: user.concept_count + 2 });
-      bot.deleteMessage(userId, load.message_id).catch(()=>{});
-      bot.sendMessage(userId, '*Twee versies (2 berichten gebruikt):*\n\n*Formeel:*\n' + formal + '\n\n---\n\n*Informeel:*\n' + informal, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'Home', callback_data: 'home' }]] } });
-    } catch(e) { bot.deleteMessage(userId, load.message_id).catch(()=>{}); bot.sendMessage(userId, 'Fout: ' + e.message); }
-  }
-
-  // VERFIJNEN
   else if (data === 'refine') {
-    if (!s.lastConcept) return bot.sendMessage(userId, 'Geen concept beschikbaar.', { reply_markup: mainKeyboard(userId) });
+    if (!s.lastConcept) { bot.sendMessage(tid, 'Geen concept beschikbaar.', { reply_markup: mainKeyboard(tid) }); return; }
     s.step = 'awaiting_refine';
-    bot.sendMessage(userId, '*Antwoord aanpassen*\n\nGeef aan wat je anders wil:\n- Maak het korter\n- Formeler of informeler\n- Voeg een disclaimer toe\n- Iets anders', { parse_mode: 'Markdown' });
+    bot.sendMessage(tid, 'Geef aan wat je anders wil:\n- Maak korter\n- Formeler\n- Voeg disclaimer toe');
   }
 
-  // TEMPLATES
-  else if (data === 'templates') {
-    const templates = await getTemplates(userId);
-    if (!templates.length) return bot.sendMessage(userId, 'Je hebt nog geen opgeslagen antwoorden.\n\nNa het genereren van een concept kun je het opslaan.', { reply_markup: { inline_keyboard: [[{ text: 'Terug', callback_data: 'home' }]] } });
-    bot.sendMessage(userId, '*Opgeslagen antwoorden:*',
-      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-        ...templates.map(t => [{ text: t.name, callback_data: 'use_template_' + t.id }, { text: 'Verwijder', callback_data: 'del_template_' + t.id }]),
-        [{ text: 'Terug', callback_data: 'home' }],
-      ]}}
-    );
-  }
-
-  else if (data.startsWith('use_template_')) {
-    const templates = await getTemplates(userId);
-    const tmpl = templates.find(t => t.id === parseInt(data.replace('use_template_', '')));
-    if (tmpl) {
-      s.lastConcept = tmpl.content;
-      bot.sendMessage(userId, '*' + tmpl.name + ':*\n\n' + tmpl.content, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'Aanpassen', callback_data: 'refine' }],[{ text: 'Terug', callback_data: 'home' }]] } });
+  else if (data === 'ab_versions') {
+    if (!s.lastMail) { bot.sendMessage(tid, 'Geen e-mail beschikbaar.', { reply_markup: mainKeyboard(tid) }); return; }
+    if (u.credits < 2) { bot.sendMessage(tid, 'Twee versies kost 2 berichten.', { reply_markup: creditsKeyboard() }); return; }
+    var loadMsg = await bot.sendMessage(tid, 'Twee versies maken...');
+    try {
+      var sys = await buildSystemPrompt(u, s.style);
+      var ab = await Promise.all([
+        callClaude('Schrijf een FORMEEL conceptantwoord, gebruik u:\n\n' + s.lastMail, sys),
+        callClaude('Schrijf een INFORMEEL conceptantwoord, gebruik je:\n\n' + s.lastMail, sys)
+      ]);
+      await saveUser(tid, { credits: u.credits - 2, concept_count: u.concept_count + 2 });
+      bot.deleteMessage(tid, loadMsg.message_id).catch(function() {});
+      bot.sendMessage(tid, 'Twee versies (2 berichten):\n\nFORMEEL:\n' + ab[0] + '\n\n---\n\nINFORMEEL:\n' + ab[1], { reply_markup: { inline_keyboard: [[{ text: 'Home', callback_data: 'home' }]] }});
+    } catch(e) {
+      bot.deleteMessage(tid, loadMsg.message_id).catch(function() {});
+      bot.sendMessage(tid, 'Fout: ' + e.message);
     }
-  }
-
-  else if (data.startsWith('del_template_')) {
-    await deleteTemplate(parseInt(data.replace('del_template_', '')));
-    bot.sendMessage(userId, 'Verwijderd.', { reply_markup: mainKeyboard(userId) });
   }
 
   else if (data === 'save_template') {
-    if (!s.lastConcept) return bot.sendMessage(userId, 'Geen concept om op te slaan.');
+    if (!s.lastConcept) { bot.sendMessage(tid, 'Geen concept om op te slaan.'); return; }
     s.step = 'awaiting_template_name';
-    bot.sendMessage(userId, 'Geef een naam voor dit antwoord:');
+    bot.sendMessage(tid, 'Geef een naam voor dit antwoord:');
   }
 
-  // KLANTEN
-  else if (data === 'clients') {
-    const clients = await getClients(userId);
-    if (!clients.length) return bot.sendMessage(userId, 'Nog geen klanten. Ze worden automatisch toegevoegd als je concepten maakt.', { reply_markup: { inline_keyboard: [[{ text: 'Terug', callback_data: 'home' }]] } });
-    const list = clients.slice(0, 8).map(c => c.email + ' (' + (c.contact_count||0) + 'x)').join('\n');
-    bot.sendMessage(userId, '*Klanten (' + clients.length + '):*\n\n' + list, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'Terug', callback_data: 'home' }]] } });
+  else if (data === 'templates') {
+    var tmplList = await getTemplates(tid);
+    if (!tmplList.length) { bot.sendMessage(tid, 'Nog geen opgeslagen antwoorden.', { reply_markup: { inline_keyboard: [[{ text: 'Terug', callback_data: 'home' }]] }}); return; }
+    bot.sendMessage(tid, 'Opgeslagen antwoorden:', { reply_markup: { inline_keyboard: tmplList.map(function(t) { return [{ text: t.name, callback_data: 'use_tmpl_' + t.id }, { text: 'Verwijder', callback_data: 'del_tmpl_' + t.id }]; }).concat([[{ text: 'Terug', callback_data: 'home' }]]) }});
   }
 
-  // WEBHOOK
+  else if (data.startsWith('use_tmpl_')) {
+    var tmplId = parseInt(data.replace('use_tmpl_', ''));
+    var allTmpls = await getTemplates(tid);
+    var tmpl = allTmpls.find(function(t) { return t.id === tmplId; });
+    if (tmpl) {
+      s.lastConcept = tmpl.content;
+      bot.sendMessage(tid, tmpl.name + ':\n\n' + tmpl.content, { reply_markup: { inline_keyboard: [[{ text: 'Aanpassen', callback_data: 'refine' }], [{ text: 'Terug', callback_data: 'home' }]] }});
+    }
+  }
+
+  else if (data.startsWith('del_tmpl_')) {
+    await deleteTemplate(parseInt(data.replace('del_tmpl_', '')));
+    bot.sendMessage(tid, 'Verwijderd.', { reply_markup: mainKeyboard(tid) });
+  }
+
+  else if (data === 'train') {
+    if (u.credits < 3) { bot.sendMessage(tid, 'Stijl trainen kost 3 berichten.', { reply_markup: creditsKeyboard() }); return; }
+    var profs2 = JSON.parse(u.style_profiles || '{"default":""}');
+    var names2 = Object.keys(profs2);
+    bot.sendMessage(tid, 'Schrijfstijlen: ' + names2.join(', '), { reply_markup: { inline_keyboard: [
+      [{ text: 'Nieuwe stijl', callback_data: 'train_new' }],
+      ...names2.map(function(n) { return [{ text: n + ' opnieuw trainen', callback_data: 'train_' + n }]; })
+    ]}});
+  }
+
+  else if (data === 'train_new') { s.step = 'awaiting_style_name'; bot.sendMessage(tid, 'Naam voor de nieuwe stijl:'); }
+  else if (data.startsWith('train_') && data !== 'train_new') {
+    s.trainName = data.replace('train_', '');
+    s.step = 'awaiting_train';
+    bot.sendMessage(tid, 'Stijl "' + s.trainName + '" trainen.\n\nStuur 5+ eigen e-mails, gescheiden door --');
+  }
+
+  else if (data === 'myknow') {
+    var knowPreview = u.user_knowledge ? u.user_knowledge.slice(0, 150) + '...' : 'Leeg';
+    bot.sendMessage(tid, 'Kennisbank:\n\n' + knowPreview, { reply_markup: { inline_keyboard: [
+      [{ text: 'Toevoegen', callback_data: 'know_add' }],
+      [{ text: 'Leegmaken', callback_data: 'know_clear' }],
+      [{ text: 'Terug', callback_data: 'home' }]
+    ]}});
+  }
+
+  else if (data === 'know_add') { s.step = 'awaiting_knowledge'; bot.sendMessage(tid, 'Stuur de informatie die ik moet weten:'); }
+  else if (data === 'know_clear') { await saveUser(tid, { user_knowledge: '' }); bot.sendMessage(tid, 'Kennisbank leeggemaakt.', { reply_markup: mainKeyboard(tid) }); }
+
   else if (data === 'webhook') {
-    const key = user.webhook_key || generateApiKey();
-    if (!user.webhook_key) await saveUser(userId, { webhook_key: key });
-    bot.sendMessage(userId,
-      '*Koppeling met Outlook of Gmail*\n\nMet Zapier of Make kun je nieuwe e-mails automatisch laten verwerken.\n\nJouw koppelingsadres:\n`' + WEBHOOK_URL + '/mailhook/' + userId + '`\n\nJouw sleutel:\n`' + key + '`\n\nIn Zapier:\n1. Trigger: nieuwe e-mail in Outlook of Gmail\n2. Actie: Webhooks - POST\n3. URL: bovenstaand adres\n4. Header: x-api-key = jouw sleutel\n5. Body: subject, from, body',
-      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-        [{ text: 'Nieuwe sleutel aanmaken', callback_data: 'webhook_reset' }],
-        [{ text: 'Terug', callback_data: 'home' }],
+    if (!u.webhook_key) await saveUser(tid, { webhook_key: generateKey() });
+    var freshUser = await getUser(tid, name);
+    var wUrl = WEBHOOK_URL + '/mailhook/' + tid;
+    bot.sendMessage(tid,
+      'Koppeling met Outlook en Gmail\n\n' +
+      'Webhook URL:\n' + wUrl + '\n\n' +
+      'API sleutel:\n' + freshUser.webhook_key + '\n\n' +
+      'Zapier stappen:\n' +
+      '1. Trigger: nieuwe e-mail\n' +
+      '2. Actie: Webhooks POST\n' +
+      '3. URL: bovenstaande URL\n' +
+      '4. Header: x-api-key = jouw sleutel\n' +
+      '5. Body: subject, from, body',
+      { reply_markup: { inline_keyboard: [
+        [{ text: 'Nieuwe sleutel', callback_data: 'webhook_reset' }],
+        [{ text: 'Terug', callback_data: 'home' }]
       ]}}
     );
   }
 
   else if (data === 'webhook_reset') {
-    const newKey = generateApiKey();
-    await saveUser(userId, { webhook_key: newKey });
-    bot.sendMessage(userId, 'Nieuwe sleutel:\n`' + newKey + '`', { parse_mode: 'Markdown', reply_markup: mainKeyboard(userId) });
+    var newKey = generateKey();
+    await saveUser(tid, { webhook_key: newKey });
+    bot.sendMessage(tid, 'Nieuwe sleutel:\n' + newKey, { reply_markup: mainKeyboard(tid) });
   }
 
-  // STIJL TRAINEN
-  else if (data === 'train') {
-    if (user.credits < 3) return bot.sendMessage(userId, 'Stijl trainen kost 3 berichten. Koop eerst berichten bij.', { reply_markup: creditsKeyboard() });
-    const profiles   = JSON.parse(user.style_profiles || '{"default":""}');
-    const styleNames = Object.keys(profiles);
-    bot.sendMessage(userId, '*Schrijfstijl*\n\nJe hebt ' + styleNames.length + ' stijl(en): ' + styleNames.join(', '),
-      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-        [{ text: 'Nieuwe stijl toevoegen', callback_data: 'train_new' }],
-        ...styleNames.map(n => [{ text: '"' + n + '" opnieuw trainen', callback_data: 'train_existing_' + n }]),
-      ]}}
-    );
-  }
-
-  else if (data === 'train_new') { s.step = 'awaiting_style_name'; bot.sendMessage(userId, 'Geef een naam voor de nieuwe stijl (bijv: formeel, zakelijk):'); }
-  else if (data.startsWith('train_existing_')) {
-    s.trainStyleName = data.replace('train_existing_', '');
-    s.step = 'awaiting_train';
-    bot.sendMessage(userId, '*"' + s.trainStyleName + '" opnieuw trainen*\n\nStuur 5+ e-mails die jij hebt geschreven. Scheid ze met ----', { parse_mode: 'Markdown' });
-  }
-
-  // KENNISBANK
-  else if (data === 'myknow') {
-    bot.sendMessage(userId, '*Kennisbank*\n\n' + (user.user_knowledge ? user.user_knowledge.slice(0,200)+'...' : 'Leeg -- voeg informatie toe over jouw bedrijf, producten of diensten.'),
-      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-        [{ text: 'Tekst toevoegen',  callback_data: 'myknow_add'   }],
-        [{ text: 'PDF uploaden',     callback_data: 'myknow_pdf'   }],
-        [{ text: 'Leegmaken',        callback_data: 'myknow_clear' }],
-        [{ text: 'Terug',            callback_data: 'home'         }],
-      ]}}
-    );
-  }
-
-  else if (data === 'myknow_add') { s.step = 'awaiting_user_knowledge'; bot.sendMessage(userId, 'Stuur de informatie die ik moet weten:'); }
-  else if (data === 'myknow_pdf') { s.step = 'awaiting_user_pdf'; bot.sendMessage(userId, 'Stuur een PDF document.'); }
-  else if (data === 'myknow_clear') { await saveUser(userId, { user_knowledge: '' }); bot.sendMessage(userId, 'Kennisbank leeggemaakt.', { reply_markup: mainKeyboard(userId) }); }
-
-  // GESCHIEDENIS
   else if (data === 'history') {
-    const hist = await getHistory(userId, 8);
-    if (!hist.length) return bot.sendMessage(userId, 'Nog geen concepten gemaakt.', { reply_markup: mainKeyboard(userId) });
-    const text = hist.map((h, i) => (i+1) + '. ' + h.subject + ' -- ' + new Date(h.created_at).toLocaleDateString('nl-NL')).join('\n');
-    bot.sendMessage(userId, '*Recente concepten:*\n\n' + text, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'Terug', callback_data: 'home' }]] } });
+    var hist = await getHistory(tid, 8);
+    if (!hist.length) { bot.sendMessage(tid, 'Nog geen concepten gemaakt.', { reply_markup: mainKeyboard(tid) }); return; }
+    var histText = hist.map(function(h, i) { return (i + 1) + '. ' + h.subject + ' - ' + new Date(h.created_at).toLocaleDateString('nl-NL'); }).join('\n');
+    bot.sendMessage(tid, 'Recente concepten:\n\n' + histText, { reply_markup: { inline_keyboard: [[{ text: 'Terug', callback_data: 'home' }]] }});
   }
 
-  // BERICHTEN KOPEN
   else if (data === 'credits') {
-    bot.sendMessage(userId, '*Berichten kopen*\n\nHuidig saldo: *' + user.credits + ' berichten*\n\n1 concept = 1 bericht\nStijl trainen = 3 berichten', { parse_mode: 'Markdown', reply_markup: creditsKeyboard() });
+    bot.sendMessage(tid, 'Berichten kopen\n\nSaldo: ' + u.credits + ' berichten\n\n1 concept = 1 bericht\nStijl trainen = 3 berichten', { reply_markup: creditsKeyboard() });
   }
 
   else if (data.startsWith('buy_')) {
-    const parts = data.split('_'); const amount = parseInt(parts[1]); const price = parseInt(parts[2]);
-    if (STRIPE_ACTIVE) {
+    var parts = data.split('_');
+    var amount = parseInt(parts[1]);
+    var price = parseInt(parts[2]);
+    if (stripe) {
       try {
-        const url = await createStripeCheckout(userId, amount, price);
-        bot.sendMessage(userId, '*' + amount + ' berichten voor euro ' + price + '*', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'Betaal via Stripe', url }]] } });
-      } catch(e) { bot.sendMessage(userId, 'Betaalfout: ' + e.message); }
+        var url = await createStripeCheckout(tid, amount, price);
+        bot.sendMessage(tid, amount + ' berichten voor euro ' + price, { reply_markup: { inline_keyboard: [[{ text: 'Betaal via Stripe', url: url }]] }});
+      } catch(e) { bot.sendMessage(tid, 'Fout: ' + e.message); }
     } else {
-      bot.sendMessage(userId, '*(Demo) ' + amount + ' berichten voor euro ' + price + '*', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'Bevestig (demo)', callback_data: 'confirm_' + amount }]] } });
+      bot.sendMessage(tid, amount + ' berichten voor euro ' + price + ' (demo)', { reply_markup: { inline_keyboard: [[{ text: 'Bevestig demo', callback_data: 'confirm_' + amount }]] }});
     }
   }
 
   else if (data.startsWith('confirm_')) {
-    const amount = parseInt(data.split('_')[1]);
-    await saveUser(userId, { credits: user.credits + amount });
-    bot.sendMessage(userId, '*' + amount + ' berichten toegevoegd!*\n\nNieuw saldo: *' + (user.credits+amount) + '*', { parse_mode: 'Markdown', reply_markup: mainKeyboard(userId) });
+    var addAmount = parseInt(data.split('_')[1]);
+    await saveUser(tid, { credits: u.credits + addAmount });
+    bot.sendMessage(tid, addAmount + ' berichten toegevoegd! Nieuw saldo: ' + (u.credits + addAmount), { reply_markup: mainKeyboard(tid) });
   }
 
-  // ADMIN
-  else if (data === 'admin' && isAdmin(userId)) {
-    const all     = await getAllUsers();
-    const pending = await getPendingUsers();
-    const gk      = await listGlobalKnowledge();
-    bot.sendMessage(userId,
-      '*Beheer*\n\n' + all.filter(u=>u.approved).length + ' actieve gebruikers\n' + pending.length + ' wachten op goedkeuring\n' + all.reduce((s,u)=>s+u.credits,0) + ' berichten in omloop\n' + all.reduce((s,u)=>s+u.concept_count,0) + ' concepten gemaakt\n' + gk.length + ' kennisitems',
-      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-        pending.length > 0 ? [{ text: 'Goedkeuren (' + pending.length + ')', callback_data: 'admin_pending' }] : [{ text: 'Geen aanvragen', callback_data: 'admin' }],
-        [{ text: 'Gebruikers beheren',    callback_data: 'admin_users'      }],
-        [{ text: 'Kennisbank beheren',    callback_data: 'admin_knowledge'  }],
-        [{ text: 'Credits geven',         callback_data: 'admin_give_credits' }],
-        [{ text: 'Rapport',               callback_data: 'admin_report'     }],
+  else if (data === 'admin' && isAdmin(tid)) {
+    var allUsers = await getAllUsers();
+    var pending = allUsers.filter(function(x) { return !x.approved; });
+    var active = allUsers.filter(function(x) { return x.approved; });
+    var gkList = await listGlobalKnowledge();
+    bot.sendMessage(tid,
+      'Beheer\n\n' +
+      active.length + ' actieve gebruikers\n' +
+      pending.length + ' wachten op goedkeuring\n' +
+      allUsers.reduce(function(s, x) { return s + x.credits; }, 0) + ' berichten totaal\n' +
+      allUsers.reduce(function(s, x) { return s + x.concept_count; }, 0) + ' concepten gemaakt\n' +
+      gkList.length + ' kennisitems',
+      { reply_markup: { inline_keyboard: [
+        [{ text: 'Goedkeuren (' + pending.length + ')', callback_data: 'admin_pending' }],
+        [{ text: 'Kennisbank', callback_data: 'admin_know' }],
+        [{ text: 'Credits geven', callback_data: 'admin_credits' }],
+        [{ text: 'Rapport', callback_data: 'admin_report' }]
       ]}}
     );
   }
 
-  else if (data === 'admin_pending' && isAdmin(userId)) {
-    const pending = await getPendingUsers();
-    if (!pending.length) return bot.sendMessage(userId, 'Geen aanvragen.', { reply_markup: mainKeyboard(userId) });
-    for (const u of pending.slice(0, 5)) {
-      bot.sendMessage(userId,
-        '*Toegangsaanvraag*\n\nNaam: ' + u.name + '\nID: ' + u.telegram_id + '\nAangemeld: ' + new Date(u.created_at).toLocaleDateString('nl-NL'),
-        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-          [{ text: 'Goedkeuren + 10 berichten', callback_data: 'approve_' + u.telegram_id },
-           { text: 'Weigeren', callback_data: 'deny_' + u.telegram_id }],
-        ]}}
-      );
-    }
+  else if (data === 'admin_pending' && isAdmin(tid)) {
+    var pending2 = (await getAllUsers()).filter(function(x) { return !x.approved; });
+    if (!pending2.length) { bot.sendMessage(tid, 'Geen aanvragen.', { reply_markup: mainKeyboard(tid) }); return; }
+    pending2.slice(0, 5).forEach(function(pu) {
+      bot.sendMessage(tid, 'Aanvraag: ' + pu.name + ' (ID: ' + pu.telegram_id + ')', { reply_markup: { inline_keyboard: [
+        [{ text: 'Goedkeuren + 10 berichten', callback_data: 'approve_' + pu.telegram_id }, { text: 'Weigeren', callback_data: 'deny_' + pu.telegram_id }]
+      ]}});
+    });
   }
 
-  else if (data.startsWith('approve_') && isAdmin(userId)) {
-    const targetId = parseInt(data.replace('approve_', ''));
-    await saveUser(targetId, { approved: true, credits: 10 });
-    bot.sendMessage(userId, 'Goedgekeurd! 10 berichten toegewezen.', { reply_markup: mainKeyboard(userId) });
-    bot.sendMessage(targetId, '*Je toegang is goedgekeurd!*\n\nJe hebt 10 gratis berichten ontvangen om te starten.\n\nTik /start om te beginnen.', { parse_mode: 'Markdown' });
+  else if (data.startsWith('approve_') && isAdmin(tid)) {
+    var appId = parseInt(data.replace('approve_', ''));
+    await saveUser(appId, { approved: true, credits: 10 });
+    bot.sendMessage(tid, 'Goedgekeurd! 10 berichten toegewezen.', { reply_markup: mainKeyboard(tid) });
+    bot.sendMessage(appId, 'Je toegang is goedgekeurd! Je hebt 10 gratis berichten.\n\nTik /start om te beginnen.');
   }
 
-  else if (data.startsWith('deny_') && isAdmin(userId)) {
-    const targetId = parseInt(data.replace('deny_', ''));
-    bot.sendMessage(userId, 'Aanvraag geweigerd.', { reply_markup: mainKeyboard(userId) });
-    bot.sendMessage(targetId, 'Je toegangsaanvraag is niet goedgekeurd. Neem contact op via de website voor meer informatie.');
+  else if (data.startsWith('deny_') && isAdmin(tid)) {
+    bot.sendMessage(tid, 'Geweigerd.', { reply_markup: mainKeyboard(tid) });
+    bot.sendMessage(parseInt(data.replace('deny_', '')), 'Je aanvraag is niet goedgekeurd.');
   }
 
-  else if (data === 'admin_users' && isAdmin(userId)) {
-    const approved = await getApprovedUsers();
-    const list = approved.slice(0,8).map(u => u.name + ' - ' + u.credits + ' berichten - ' + u.concept_count + ' concepten').join('\n');
-    bot.sendMessage(userId, '*Actieve gebruikers (' + approved.length + '):*\n\n' + (list||'Geen'), { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'Terug', callback_data: 'admin' }]] } });
+  else if (data === 'admin_know' && isAdmin(tid)) {
+    var gkList2 = await listGlobalKnowledge();
+    var gkText = gkList2.length ? gkList2.map(function(k, i) { return (i + 1) + '. ' + k.title; }).join('\n') : 'Leeg';
+    bot.sendMessage(tid, 'Globale kennisbank:\n\n' + gkText, { reply_markup: { inline_keyboard: [
+      [{ text: 'Toevoegen', callback_data: 'admin_know_add' }],
+      [{ text: 'Terug', callback_data: 'admin' }]
+    ]}});
   }
 
-  else if (data === 'admin_knowledge' && isAdmin(userId)) {
-    const list = await listGlobalKnowledge();
-    bot.sendMessage(userId, '*Kennisbank (' + list.length + ' items)*\n\n' + (list.map((k,i)=>(i+1)+'. '+k.title).join('\n')||'Leeg'),
-      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-        [{ text: 'Toevoegen', callback_data: 'admin_know_add' }],
-        [{ text: 'Verwijderen', callback_data: 'admin_know_del' }],
-        [{ text: 'Terug', callback_data: 'admin' }],
-      ]}}
-    );
+  else if (data === 'admin_know_add' && isAdmin(tid)) { s.step = 'admin_know_add'; bot.sendMessage(tid, 'Stuur tekst. Eerste regel = titel.'); }
+
+  else if (data === 'admin_credits' && isAdmin(tid)) { s.step = 'admin_give_credits'; bot.sendMessage(tid, 'Stuur: TELEGRAM_ID AANTAL\n\nBijv: 123456789 50'); }
+
+  else if (data === 'admin_report' && isAdmin(tid)) {
+    var allU = await getAllUsers();
+    var report = 'Rapport ' + new Date().toLocaleDateString('nl-NL') + '\n\n';
+    report += allU.filter(function(x) { return x.approved; }).length + ' actieve gebruikers\n';
+    report += allU.reduce(function(s, x) { return s + x.credits; }, 0) + ' berichten totaal\n';
+    report += allU.reduce(function(s, x) { return s + x.concept_count; }, 0) + ' concepten gemaakt\n\n';
+    allU.filter(function(x) { return x.approved; }).slice(0, 8).forEach(function(x) {
+      report += x.name + ': ' + x.credits + ' berichten, ' + x.concept_count + ' concepten\n';
+    });
+    bot.sendMessage(tid, report.slice(0, 3800));
   }
 
-  else if (data === 'admin_know_add' && isAdmin(userId)) { s.step = 'admin_awaiting_knowledge'; bot.sendMessage(userId, 'Stuur de tekst. Eerste regel = titel:'); }
-
-  else if (data === 'admin_know_del' && isAdmin(userId)) {
-    const list = await listGlobalKnowledge();
-    if (!list.length) return bot.sendMessage(userId, 'Niets te verwijderen.');
-    bot.sendMessage(userId, 'Kies wat je wil verwijderen:', { reply_markup: { inline_keyboard: [...list.map(k => [{ text: k.title, callback_data: 'admin_del_' + k.id }]), [{ text: 'Terug', callback_data: 'admin_knowledge' }]] } });
-  }
-
-  else if (data.startsWith('admin_del_') && isAdmin(userId)) {
-    await deleteGlobalKnowledge(parseInt(data.replace('admin_del_', '')));
-    bot.sendMessage(userId, 'Verwijderd.', { reply_markup: mainKeyboard(userId) });
-  }
-
-  else if (data === 'admin_give_credits' && isAdmin(userId)) { s.step = 'admin_awaiting_credits'; bot.sendMessage(userId, 'Stuur: TELEGRAM_ID AANTAL\n\nBijvoorbeeld: 123456789 50'); }
-
-  else if (data === 'admin_report' && isAdmin(userId)) {
-    const all = await getAllUsers();
-    let r = '*Rapport ' + new Date().toLocaleDateString('nl-NL') + '*\n\n';
-    r += all.filter(u=>u.approved).length + ' actieve gebruikers\n';
-    r += all.reduce((s,u)=>s+u.credits,0) + ' berichten in omloop\n';
-    r += all.reduce((s,u)=>s+u.concept_count,0) + ' concepten gemaakt\n\n';
-    all.filter(u=>u.approved).slice(0,8).forEach(u => { r += u.name + ': ' + u.credits + ' berichten, ' + u.concept_count + ' concepten\n'; });
-    bot.sendMessage(userId, r.slice(0,3800), { parse_mode: 'Markdown' });
-  }
-
-  // HOME
   else if (data === 'home') {
     s.step = 'idle';
-    const fresh = await getUser(userId, first_name);
-    bot.sendMessage(userId, '*MailMate*\n\nSaldo: *' + fresh.credits + ' berichten*', { parse_mode: 'Markdown', reply_markup: mainKeyboard(userId) });
+    var fresh = await getUser(tid, name);
+    bot.sendMessage(tid, 'MailMate\n\nSaldo: ' + fresh.credits + ' berichten', { reply_markup: mainKeyboard(tid) });
   }
 });
 
-// ====================================================
+// ????????????????????????????????????????
 // BERICHTEN
-// ====================================================
-bot.on('message', async (msg) => {
+// ????????????????????????????????????????
+bot.on('message', async function(msg) {
   if (msg.text && msg.text.startsWith('/')) return;
-  const { id: userId, first_name } = msg.from;
-  const s    = getState(userId);
-  const text = msg.text ? msg.text.trim() : '';
-  const user = await getUser(userId, first_name);
+  var tid = msg.from.id;
+  var name = msg.from.first_name || 'Gebruiker';
+  var s = getState(tid);
+  var text = msg.text ? msg.text.trim() : '';
+  var u = await getUser(tid, name);
 
-  // TOEGANGSCODE CHECK
-  if (s.step === 'awaiting_access_code') {
-    if (text === ACCESS_CODE) {
-      // Juiste code -- markeer als aanvraag ingediend en notificeer admin
-      s.step = 'idle';
-      await saveUser(userId, { name: first_name });
-      bot.sendMessage(userId, '*Code correct!*\n\nJe aanvraag is ingediend. Je ontvangt een bericht zodra je toegang hebt gekregen.', { parse_mode: 'Markdown' });
-      // Notificeer admin
-      bot.sendMessage(ADMIN_ID,
-        '*Nieuwe toegangsaanvraag*\n\nNaam: ' + first_name + '\nTelegram ID: ' + userId,
-        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-          [{ text: 'Goedkeuren + 10 berichten', callback_data: 'approve_' + userId },
-           { text: 'Weigeren', callback_data: 'deny_' + userId }],
-        ]}}
-      );
-    } else {
-      bot.sendMessage(userId, 'Onjuiste toegangscode. Probeer het opnieuw of neem contact op via de website.');
-    }
-    return;
-  }
-
-  // TOEGANGSCONTROLE op alle overige berichten
-  if (!isAdmin(userId) && !user.approved) {
-    bot.sendMessage(userId, 'Je hebt nog geen toegang. Tik /start om een toegangscode in te voeren.');
-    return;
-  }
-
-  // PDF
+  // PDF upload
   if (msg.document) {
-    const isPdf = s.step === 'awaiting_user_pdf' || s.step === 'admin_awaiting_pdf';
-    if (!isPdf) return;
+    if (s.step !== 'awaiting_pdf' && s.step !== 'admin_pdf') return;
     try {
-      const fileUrl  = await bot.getFileLink(msg.document.file_id);
-      const res      = await fetch(fileUrl);
-      const buffer   = await res.arrayBuffer();
-      const pdfParse = require('pdf-parse');
-      const pdfData  = await pdfParse(Buffer.from(buffer));
-      const extracted = pdfData.text.slice(0, 8000);
-      const fname     = msg.document.file_name || 'document.pdf';
-      if (s.step === 'awaiting_user_pdf') {
-        await saveUser(userId, { user_knowledge: ((user.user_knowledge||'')+'\n\n'+fname+':\n'+extracted).slice(0,12000) });
+      var fileUrl = await bot.getFileLink(msg.document.file_id);
+      var resp = await fetch(fileUrl);
+      var buf = await resp.arrayBuffer();
+      var pdfParse = require('pdf-parse');
+      var pdfData = await pdfParse(Buffer.from(buf));
+      var extracted = pdfData.text.slice(0, 8000);
+      var fname = msg.document.file_name || 'document.pdf';
+      if (s.step === 'awaiting_pdf') {
+        await saveUser(tid, { user_knowledge: ((u.user_knowledge || '') + '\n\n' + fname + ':\n' + extracted).slice(0, 12000) });
         s.step = 'idle';
-        bot.sendMessage(userId, 'Document verwerkt: ' + fname, { reply_markup: mainKeyboard(userId) });
-      } else if (s.step === 'admin_awaiting_pdf' && isAdmin(userId)) {
+        bot.sendMessage(tid, 'PDF verwerkt: ' + fname, { reply_markup: mainKeyboard(tid) });
+      } else if (s.step === 'admin_pdf' && isAdmin(tid)) {
         await addGlobalKnowledge(fname, extracted);
         s.step = 'idle';
-        bot.sendMessage(userId, 'Document toegevoegd aan kennisbank.', { reply_markup: mainKeyboard(userId) });
+        bot.sendMessage(tid, 'PDF toegevoegd aan kennisbank.', { reply_markup: mainKeyboard(tid) });
       }
-    } catch(e) { s.step = 'idle'; bot.sendMessage(userId, 'Fout bij verwerken: ' + e.message); }
+    } catch(e) { s.step = 'idle'; bot.sendMessage(tid, 'Fout: ' + e.message); }
     return;
   }
 
   if (!text) return;
 
-  // ADMIN: credits geven
-  if (s.step === 'admin_awaiting_credits' && isAdmin(userId)) {
-    const parts = text.split(' ');
-    const targetId = parseInt(parts[0]), amount = parseInt(parts[1]);
-    if (!isNaN(targetId) && !isNaN(amount)) {
-      const target = await getUser(targetId, '');
-      if (target) { await saveUser(targetId, { credits: target.credits + amount }); s.step = 'idle'; return bot.sendMessage(userId, amount + ' berichten toegevoegd aan ' + targetId, { reply_markup: mainKeyboard(userId) }); }
+  // Toegangscode check
+  if (s.step === 'awaiting_code') {
+    if (text === ACCESS_CODE) {
+      s.step = 'idle';
+      bot.sendMessage(tid, 'Code correct! Je aanvraag is ingediend.\n\nJe ontvangt een bericht zodra je bent goedgekeurd.');
+      bot.sendMessage(ADMIN_ID, 'Nieuwe aanvraag: ' + name + ' (ID: ' + tid + ')', { reply_markup: { inline_keyboard: [
+        [{ text: 'Goedkeuren + 10 berichten', callback_data: 'approve_' + tid }, { text: 'Weigeren', callback_data: 'deny_' + tid }]
+      ]}});
+    } else {
+      bot.sendMessage(tid, 'Onjuiste code. Probeer opnieuw.');
     }
-    return bot.sendMessage(userId, 'Formaat: 123456789 50');
+    return;
   }
 
-  // ADMIN: kennisbank
-  if (s.step === 'admin_awaiting_knowledge' && isAdmin(userId)) {
-    const lines = text.split('\n');
+  // Toegangscontrole
+  if (!isAdmin(tid) && !u.approved) {
+    bot.sendMessage(tid, 'Geen toegang. Tik /start en voer je code in.');
+    return;
+  }
+
+  // Admin: credits geven
+  if (s.step === 'admin_give_credits' && isAdmin(tid)) {
+    var creditParts = text.split(' ');
+    var targetId = parseInt(creditParts[0]);
+    var addCr = parseInt(creditParts[1]);
+    if (!isNaN(targetId) && !isNaN(addCr)) {
+      var target = await getUser(targetId, '');
+      if (target) { await saveUser(targetId, { credits: target.credits + addCr }); s.step = 'idle'; return bot.sendMessage(tid, addCr + ' berichten aan ' + targetId, { reply_markup: mainKeyboard(tid) }); }
+    }
+    return bot.sendMessage(tid, 'Formaat: 123456789 50');
+  }
+
+  // Admin: kennisbank toevoegen
+  if (s.step === 'admin_know_add' && isAdmin(tid)) {
+    var lines = text.split('\n');
     await addGlobalKnowledge(lines[0].trim(), lines.slice(1).join('\n').trim() || text);
     s.step = 'idle';
-    bot.sendMessage(userId, 'Toegevoegd aan kennisbank.', { reply_markup: mainKeyboard(userId) });
+    bot.sendMessage(tid, 'Toegevoegd.', { reply_markup: mainKeyboard(tid) });
     return;
   }
 
-  // ONBOARDING: vakgebied
+  // Onboarding: vakgebied
   if (s.step === 'onboard_vakgebied') {
-    const parts = text.split('-').map(p => p.trim());
-    await saveUser(userId, { vakgebied: parts[0]||text, doel: parts[1]||'' });
+    var vakParts = text.split('-').map(function(p) { return p.trim(); });
+    await saveUser(tid, { vakgebied: vakParts[0] || text, doel: vakParts[1] || '' });
     s.step = 'onboard_toon';
-    bot.sendMessage(userId, '*Stap 2 van 4 -- Toon*\n\nHoe schrijf jij normaal?',
-      { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-        [{ text: 'Formeel (u)', callback_data: 'toon_formeel' }],
-        [{ text: 'Informeel (je)', callback_data: 'toon_informeel' }],
-        [{ text: 'Hangt van de klant af', callback_data: 'toon_mix' }],
-      ]}}
-    );
+    bot.sendMessage(tid, 'Vakgebied opgeslagen.\n\nStap 2 van 4 - Toon\n\nHoe schrijf jij normaal?', { reply_markup: { inline_keyboard: [
+      [{ text: 'Formeel (u)', callback_data: 'toon_formeel' }],
+      [{ text: 'Informeel (je)', callback_data: 'toon_informeel' }],
+      [{ text: 'Mix', callback_data: 'toon_mix' }]
+    ]}});
     return;
   }
 
-  // ONBOARDING: stijl
+  // Onboarding: stijl
   if (s.step === 'onboard_style') {
-    if (text.length < 80) return bot.sendMessage(userId, 'Te kort. Stuur meer e-mails of tik /skip.');
-    const load = await bot.sendMessage(userId, '_Schrijfstijl analyseren..._', { parse_mode: 'Markdown' });
+    if (text.length < 80) { bot.sendMessage(tid, 'Te kort. Meer mails of /skip.'); return; }
+    var loadMsg2 = await bot.sendMessage(tid, 'Stijl analyseren...');
     try {
-      const profile = await callClaude('Analyseer de schrijfstijl. Max 200 woorden: toon, je/u, aanhef, afsluiting, zinslengte.\n\nE-MAILS:\n' + text);
-      await saveUser(userId, { style_profiles: JSON.stringify({ default: profile }), credits: user.credits - 3 });
-      bot.deleteMessage(userId, load.message_id).catch(()=>{});
+      var styleProfile = await callClaude('Analyseer schrijfstijl in max 200 woorden. Toon, aanhef, afsluiting, zinslengte.\n\nE-MAILS:\n' + text);
+      await saveUser(tid, { style_profiles: JSON.stringify({ default: styleProfile }), credits: u.credits - 3 });
+      bot.deleteMessage(tid, loadMsg2.message_id).catch(function() {});
       s.step = 'onboard_knowledge';
-      bot.sendMessage(userId, '*Stijl geleerd! (3 berichten gebruikt)*\n\n*Stap 4 van 4 -- Eigen kennis*\n\nVoeg informatie toe over je bedrijf, producten of diensten. Ik gebruik dit bij elk antwoord.\n\n_Tik /skip om later toe te voegen._', { parse_mode: 'Markdown' });
-    } catch(e) { bot.deleteMessage(userId, load.message_id).catch(()=>{}); bot.sendMessage(userId, 'Fout: ' + e.message); }
+      bot.sendMessage(tid, 'Stijl geleerd! (3 berichten)\n\nStap 4 van 4 - Kennisbank\n\nVoeg info toe over je bedrijf of tik /skip.');
+    } catch(e) { bot.deleteMessage(tid, loadMsg2.message_id).catch(function() {}); bot.sendMessage(tid, 'Fout: ' + e.message); }
     return;
   }
 
-  // ONBOARDING: kennisbank
+  // Onboarding: kennisbank
   if (s.step === 'onboard_knowledge') {
-    await saveUser(userId, { user_knowledge: text.slice(0,12000), onboarded: true });
+    await saveUser(tid, { user_knowledge: text.slice(0, 12000), onboarded: true });
     s.step = 'idle';
-    bot.sendMessage(userId, '*Klaar! Je bent volledig ingesteld.*\n\nStuur me een e-mail en ik schrijf direct een conceptantwoord.', { parse_mode: 'Markdown', reply_markup: mainKeyboard(userId) });
+    bot.sendMessage(tid, 'Klaar! Je agent is ingesteld.', { reply_markup: mainKeyboard(tid) });
     return;
   }
 
-  // STIJLNAAM
+  // Stijlnaam
   if (s.step === 'awaiting_style_name') {
-    s.trainStyleName = text.toLowerCase().trim();
+    s.trainName = text.toLowerCase().trim();
     s.step = 'awaiting_train';
-    bot.sendMessage(userId, 'Naam: "' + s.trainStyleName + '"\n\nStuur nu 5+ e-mails die jij hebt geschreven. Scheid ze met ----', { parse_mode: 'Markdown' });
+    bot.sendMessage(tid, 'Stijl "' + s.trainName + '" trainen.\n\nStuur 5+ eigen e-mails, gescheiden door --');
     return;
   }
 
-  // STIJL TRAINEN
+  // Stijl trainen
   if (s.step === 'awaiting_train') {
-    if (text.length < 100) return bot.sendMessage(userId, 'Te weinig tekst. Stuur meer e-mails.');
-    const load = await bot.sendMessage(userId, '_Schrijfstijl analyseren..._', { parse_mode: 'Markdown' });
+    if (text.length < 100) { bot.sendMessage(tid, 'Te weinig tekst.'); return; }
+    var trainLoad = await bot.sendMessage(tid, 'Stijl analyseren...');
     try {
-      const profile   = await callClaude('Analyseer de schrijfstijl. Max 200 woorden: toon, je/u, aanhef, afsluiting, zinslengte.\n\nE-MAILS:\n' + text);
-      const styleName = s.trainStyleName || 'default';
-      const profiles  = JSON.parse(user.style_profiles || '{"default":""}');
-      profiles[styleName] = profile;
-      await saveUser(userId, { style_profiles: JSON.stringify(profiles), credits: user.credits - 3 });
+      var trainProfile = await callClaude('Analyseer schrijfstijl in max 200 woorden. Toon, aanhef, afsluiting, zinslengte.\n\nE-MAILS:\n' + text);
+      var trainName2 = s.trainName || 'default';
+      var trainProfs = JSON.parse(u.style_profiles || '{"default":""}');
+      trainProfs[trainName2] = trainProfile;
+      await saveUser(tid, { style_profiles: JSON.stringify(trainProfs), credits: u.credits - 3 });
       s.step = 'idle';
-      bot.deleteMessage(userId, load.message_id).catch(()=>{});
-      bot.sendMessage(userId, '*Stijl "' + styleName + '" opgeslagen!*\n\nSaldo: ' + (user.credits-3) + ' berichten', { parse_mode: 'Markdown', reply_markup: mainKeyboard(userId) });
-    } catch(e) { bot.deleteMessage(userId, load.message_id).catch(()=>{}); bot.sendMessage(userId, 'Fout: ' + e.message); }
+      bot.deleteMessage(tid, trainLoad.message_id).catch(function() {});
+      bot.sendMessage(tid, 'Stijl "' + trainName2 + '" opgeslagen! Saldo: ' + (u.credits - 3) + ' berichten', { reply_markup: mainKeyboard(tid) });
+    } catch(e) { bot.deleteMessage(tid, trainLoad.message_id).catch(function() {}); bot.sendMessage(tid, 'Fout: ' + e.message); }
     return;
   }
 
-  // KENNISBANK TOEVOEGEN
-  if (s.step === 'awaiting_user_knowledge') {
-    await saveUser(userId, { user_knowledge: ((user.user_knowledge||'')+'\n\n'+text).slice(0,12000) });
+  // Kennisbank toevoegen
+  if (s.step === 'awaiting_knowledge') {
+    await saveUser(tid, { user_knowledge: ((u.user_knowledge || '') + '\n\n' + text).slice(0, 12000) });
     s.step = 'idle';
-    bot.sendMessage(userId, 'Toegevoegd aan kennisbank.', { reply_markup: mainKeyboard(userId) });
+    bot.sendMessage(tid, 'Toegevoegd.', { reply_markup: mainKeyboard(tid) });
     return;
   }
 
-  // TEMPLATE NAAM
+  // Template naam
   if (s.step === 'awaiting_template_name') {
-    await saveTemplate(userId, text.trim(), s.lastConcept);
+    await saveTemplate(tid, text.trim(), s.lastConcept);
     s.step = 'idle';
-    bot.sendMessage(userId, '"' + text.trim() + '" opgeslagen!', { reply_markup: mainKeyboard(userId) });
+    bot.sendMessage(tid, '"' + text.trim() + '" opgeslagen!', { reply_markup: mainKeyboard(tid) });
     return;
   }
 
-  // VERFIJNEN
+  // Verfijnen
   if (s.step === 'awaiting_refine') {
-    if (!s.lastConcept) return bot.sendMessage(userId, 'Geen concept.', { reply_markup: mainKeyboard(userId) });
-    const load = await bot.sendMessage(userId, '_Antwoord aanpassen..._', { parse_mode: 'Markdown' });
+    if (!s.lastConcept) { bot.sendMessage(tid, 'Geen concept.', { reply_markup: mainKeyboard(tid) }); return; }
+    var refineLoad = await bot.sendMessage(tid, 'Aanpassen...');
     try {
-      const refined = await callClaude('Pas dit e-mail concept aan op basis van de instructie. Geef alleen het resultaat.\n\nInstructie: ' + text + '\n\nHuidig concept:\n' + s.lastConcept, 'Pas het concept aan. Geef alleen het resultaat terug.');
+      var refined = await callClaude('Pas dit concept aan. Instructie: ' + text + '\n\nConcept:\n' + s.lastConcept, 'Pas het concept aan en geef alleen het resultaat.');
       s.lastConcept = refined;
       s.step = 'idle';
-      bot.deleteMessage(userId, load.message_id).catch(()=>{});
-      bot.sendMessage(userId, '*Aangepast antwoord:*\n\n' + refined,
-        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-          [{ text: 'Nogmaals aanpassen', callback_data: 'refine' }, { text: 'Opslaan', callback_data: 'save_template' }],
-          [{ text: 'Home', callback_data: 'home' }],
-        ]}}
-      );
-    } catch(e) { bot.deleteMessage(userId, load.message_id).catch(()=>{}); bot.sendMessage(userId, 'Fout: ' + e.message); }
+      bot.deleteMessage(tid, refineLoad.message_id).catch(function() {});
+      bot.sendMessage(tid, 'Aangepast:\n\n' + refined, { reply_markup: { inline_keyboard: [
+        [{ text: 'Nogmaals', callback_data: 'refine' }, { text: 'Opslaan', callback_data: 'save_template' }],
+        [{ text: 'Home', callback_data: 'home' }]
+      ]}});
+    } catch(e) { bot.deleteMessage(tid, refineLoad.message_id).catch(function() {}); bot.sendMessage(tid, 'Fout: ' + e.message); }
     return;
   }
 
-  // BATCH
+  // Batch
   if (s.step === 'awaiting_batch') {
-    const mails = text.split('===MAIL===').map(m => m.trim()).filter(m => m.length > 20);
-    if (!mails.length) return bot.sendMessage(userId, 'Geen e-mails gevonden. Zet ===MAIL=== tussen de mails.');
-    if (user.credits < mails.length) return bot.sendMessage(userId, 'Je hebt ' + user.credits + ' berichten maar hebt ' + mails.length + ' nodig.', { reply_markup: creditsKeyboard() });
-    const load = await bot.sendMessage(userId, '_' + mails.length + ' e-mails verwerken..._', { parse_mode: 'Markdown' });
+    var mails = text.split('===MAIL===').map(function(m) { return m.trim(); }).filter(function(m) { return m.length > 20; });
+    if (!mails.length) { bot.sendMessage(tid, 'Geen mails gevonden. Gebruik ===MAIL=== als scheiding.'); return; }
+    if (u.credits < mails.length) { bot.sendMessage(tid, 'Je hebt ' + u.credits + ' berichten maar hebt ' + mails.length + ' nodig.', { reply_markup: creditsKeyboard() }); return; }
+    var batchLoad = await bot.sendMessage(tid, mails.length + ' mails verwerken...');
     try {
-      const systemPrompt = await buildSystemPrompt(user, s.activeStyle || 'default');
-      const concepts = await Promise.all(mails.map(mail => callClaude('Schrijf een conceptantwoord:\n\n' + mail, systemPrompt)));
-      await saveUser(userId, { credits: user.credits - mails.length, concept_count: user.concept_count + mails.length });
-      bot.deleteMessage(userId, load.message_id).catch(()=>{});
-      for (let i = 0; i < concepts.length; i++) {
-        await bot.sendMessage(userId, '*Concept ' + (i+1) + ' van ' + mails.length + ':*\n\n' + concepts[i], { parse_mode: 'Markdown' });
-        await new Promise(r => setTimeout(r, 500));
+      var batchSys = await buildSystemPrompt(u, s.style);
+      var concepts = await Promise.all(mails.map(function(mail) { return callClaude('Schrijf een conceptantwoord:\n\n' + mail, batchSys); }));
+      await saveUser(tid, { credits: u.credits - mails.length, concept_count: u.concept_count + mails.length });
+      bot.deleteMessage(tid, batchLoad.message_id).catch(function() {});
+      for (var i = 0; i < concepts.length; i++) {
+        await bot.sendMessage(tid, 'Concept ' + (i + 1) + ' van ' + mails.length + ':\n\n' + concepts[i]);
+        await new Promise(function(r) { setTimeout(r, 500); });
       }
       s.step = 'idle';
-      bot.sendMessage(userId, '*' + mails.length + ' concepten klaar.*\n\nSaldo: ' + (user.credits-mails.length) + ' berichten', { parse_mode: 'Markdown', reply_markup: mainKeyboard(userId) });
-    } catch(e) { bot.deleteMessage(userId, load.message_id).catch(()=>{}); bot.sendMessage(userId, 'Fout: ' + e.message); }
+      bot.sendMessage(tid, mails.length + ' concepten klaar. Saldo: ' + (u.credits - mails.length) + ' berichten', { reply_markup: mainKeyboard(tid) });
+    } catch(e) { bot.deleteMessage(tid, batchLoad.message_id).catch(function() {}); bot.sendMessage(tid, 'Fout: ' + e.message); }
     return;
   }
 
-  // CONCEPT GENEREREN
+  // Concept genereren
   if (s.step === 'awaiting_mail') {
-    if (text.length < 20) return bot.sendMessage(userId, 'E-mail te kort.');
-    if (!checkRateLimit(userId)) return bot.sendMessage(userId, 'Je hebt het maximum van ' + MAX_PER_HOUR + ' concepten per uur bereikt. Probeer het straks opnieuw.');
-    const load = await bot.sendMessage(userId, '_Conceptantwoord schrijven..._', { parse_mode: 'Markdown' });
+    if (text.length < 20) { bot.sendMessage(tid, 'E-mail te kort.'); return; }
+    if (!checkRate(tid)) { bot.sendMessage(tid, 'Maximum bereikt. Probeer over een uur.'); return; }
+    var composeLoad = await bot.sendMessage(tid, 'Conceptantwoord schrijven...');
     try {
-      const clientEmail  = (text.match(/Van:\s*([^\s]+@[^\s]+)/i)||[])[1] || null;
-      const analysis     = await analyzeMail(text);
-      const clientInfo   = clientEmail ? await getClient(userId, clientEmail) : null;
-      const systemPrompt = await buildSystemPrompt(user, s.activeStyle || 'default', clientInfo);
-      const reply        = await callClaude('Schrijf een conceptantwoord:\n\n' + text, systemPrompt);
-      const subjectLine  = await generateSubjectLine((text.match(/Onderwerp:\s*(.+)/)||[])[1]||'', reply);
-
-      s.lastConcept  = reply;
-      s.lastIncoming = text;
+      var composeSys = await buildSystemPrompt(u, s.style);
+      var reply = await callClaude('Schrijf een conceptantwoord:\n\n' + text, composeSys);
+      s.lastConcept = reply;
+      s.lastMail = text;
       s.step = 'idle';
-
-      await saveUser(userId, { credits: user.credits - 1, concept_count: user.concept_count + 1 });
-      const subj = (text.match(/(?:Onderwerp|Subject):\s*(.+)/)||['','E-mail'])[1];
-      await addHistory(userId, subj, reply);
-      await scheduleFollowUp(userId, subj);
-      if (clientEmail) await upsertClient(userId, clientEmail, subj, text);
-
-      bot.deleteMessage(userId, load.message_id).catch(()=>{});
-
-      const sentimentTekst = analysis.sentiment === 'urgent' ? 'Urgent' : analysis.sentiment === 'negatief' ? 'Negatieve toon' : '';
-
-      bot.sendMessage(userId,
-        (sentimentTekst ? '*' + sentimentTekst + '*\n\n' : '') +
-        '*Conceptantwoord:*\n\n' + reply + '\n\n_Onderwerpregel: ' + subjectLine + '_\n\n_Saldo: ' + (user.credits-1) + ' berichten_',
-        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-          [{ text: 'Aanpassen', callback_data: 'refine' }, { text: 'Twee versies', callback_data: 'ab_versions' }],
-          [{ text: 'Opslaan', callback_data: 'save_template' }, { text: 'Opnieuw', callback_data: 'compose' }],
-          [{ text: 'Home', callback_data: 'home' }],
-        ]}}
-      );
+      await saveUser(tid, { credits: u.credits - 1, concept_count: u.concept_count + 1 });
+      var subjectMatch = text.match(/(?:Onderwerp|Subject):\s*(.+)/);
+      var subj = subjectMatch ? subjectMatch[1] : 'E-mail';
+      await addHistory(tid, subj, reply);
+      await scheduleFollowUp(tid, subj);
+      var emailMatch = text.match(/Van:\s*([^\s]+@[^\s]+)/i);
+      if (emailMatch) await upsertClient(tid, emailMatch[1], subj);
+      bot.deleteMessage(tid, composeLoad.message_id).catch(function() {});
+      bot.sendMessage(tid, 'Conceptantwoord:\n\n' + reply + '\n\nSaldo: ' + (u.credits - 1) + ' berichten', { reply_markup: { inline_keyboard: [
+        [{ text: 'Aanpassen', callback_data: 'refine' }, { text: 'Twee versies', callback_data: 'ab_versions' }],
+        [{ text: 'Opslaan', callback_data: 'save_template' }, { text: 'Opnieuw', callback_data: 'compose' }],
+        [{ text: 'Home', callback_data: 'home' }]
+      ]}});
     } catch(e) {
-      bot.deleteMessage(userId, load.message_id).catch(()=>{});
-      bot.sendMessage(userId, 'Fout: ' + e.message, { reply_markup: mainKeyboard(userId) });
+      bot.deleteMessage(tid, composeLoad.message_id).catch(function() {});
+      bot.sendMessage(tid, 'Fout: ' + e.message, { reply_markup: mainKeyboard(tid) });
     }
     return;
   }
 
-  bot.sendMessage(userId, 'Gebruik de knoppen hieronder.', { reply_markup: mainKeyboard(userId) });
+  bot.sendMessage(tid, 'Gebruik de knoppen.', { reply_markup: mainKeyboard(tid) });
 });
 
-// FOLLOW-UP checker
-setInterval(async () => {
-  const { data } = await supabase.from('followups').select('*').eq('sent', false).lte('remind_at', new Date().toISOString());
-  if (!data) return;
-  for (const f of data) {
-    try {
-      await bot.sendMessage(f.telegram_id, '*Herinnering*\n\n"' + f.subject + '"\n\nHeb je al geantwoord?',
-        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-          [{ text: 'Nieuw concept', callback_data: 'compose' }, { text: 'Al gedaan', callback_data: 'followup_done_' + f.id }],
-        ]}}
-      );
-      await supabase.from('followups').update({ sent: true }).eq('id', f.id);
-    } catch(e) {}
-  }
+// Follow-up checker
+setInterval(async function() {
+  try {
+    var result = await sb.from('followups').select('*').eq('sent', false).lte('remind_at', new Date().toISOString());
+    if (!result.data) return;
+    for (var i = 0; i < result.data.length; i++) {
+      var f = result.data[i];
+      try {
+        await bot.sendMessage(f.telegram_id, 'Herinnering: "' + f.subject + '"\n\nHeb je al geantwoord?', { reply_markup: { inline_keyboard: [
+          [{ text: 'Nieuw concept', callback_data: 'compose' }, { text: 'Al gedaan', callback_data: 'followup_done' }]
+        ]}});
+        await sb.from('followups').update({ sent: true }).eq('id', f.id);
+      } catch(e) { /* stil falen */ }
+    }
+  } catch(e) { /* stil falen */ }
 }, 6 * 60 * 60 * 1000);
 
-// Berichten bijna op checker
-setInterval(async () => {
-  const users = await getAllUsers();
-  for (const u of users) {
-    if (u.approved && u.credits > 0 && u.credits <= 5) {
-      try { await bot.sendMessage(u.telegram_id, 'Nog *' + u.credits + ' berichten* resterend. Koop berichten om door te gaan.', { parse_mode: 'Markdown', reply_markup: creditsKeyboard() }); }
-      catch(e) {}
-    }
-  }
-}, 24 * 60 * 60 * 1000);
-
-console.log('MailMate v4.1 gestart -- Whitelist + Rate limiting actief');
+console.log('MailMate v5 gestart');
