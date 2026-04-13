@@ -32,6 +32,16 @@ else { console.log('Stripe demo modus'); }
 
 // Express
 const app = express();
+
+// CORS — laat webapp op app.mailmate.nl de API gebruiken
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+
 app.use((req, res, next) => {
   if (req.path === '/stripe-webhook') express.raw({ type: 'application/json' })(req, res, next);
   else express.json()(req, res, next);
@@ -91,7 +101,69 @@ app.post('/mailhook/:userId', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Externe API
+// Externe API — webapp endpoints
+// POST /api/compose-ab — A/B versies
+app.post('/api/compose-ab', async (req, res) => {
+  const { telegram_id, api_key, mail_text, style } = req.body;
+  const user = await getUser(parseInt(telegram_id)||0, '');
+  if (!user || user.webhook_key !== api_key) return res.status(401).json({ error: 'Unauthorized' });
+  if (!user.approved && parseInt(telegram_id) !== ADMIN_ID) return res.status(403).json({ error: 'Niet goedgekeurd' });
+  if (user.credits < 2) return res.status(402).json({ error: 'Onvoldoende berichten (2 nodig voor A/B)' });
+  try {
+    const systemPrompt = await buildSystemPrompt(user, style||'default');
+    const [formal, informal] = await Promise.all([
+      callClaude('Schrijf een FORMEEL conceptantwoord (gebruik u):
+
+' + mail_text, systemPrompt),
+      callClaude('Schrijf een INFORMEEL conceptantwoord (gebruik je):
+
+' + mail_text, systemPrompt)
+    ]);
+    await saveUser(parseInt(telegram_id)||0, { credits: user.credits - 2, concept_count: user.concept_count + 2 });
+    res.json({ formal, informal });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/refine — concept verfijnen
+app.post('/api/refine', async (req, res) => {
+  const { telegram_id, api_key, concept, instruction } = req.body;
+  const user = await getUser(parseInt(telegram_id)||0, '');
+  if (!user || user.webhook_key !== api_key) return res.status(401).json({ error: 'Unauthorized' });
+  if (!concept || !instruction) return res.status(400).json({ error: 'concept en instruction vereist' });
+  try {
+    const refined = await callClaude(
+      'Pas dit e-mail concept aan op basis van de instructie. Geef ALLEEN het resultaat terug.
+
+Instructie: ' + instruction + '
+
+Concept:
+' + concept,
+      'Pas het e-mail concept aan. Geef alleen het resultaat terug.'
+    );
+    res.json({ refined });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/train-style — stijl trainen via webapp
+app.post('/api/train-style', async (req, res) => {
+  const { telegram_id, api_key, name, mails } = req.body;
+  const user = await getUser(parseInt(telegram_id)||0, '');
+  if (!user || user.webhook_key !== api_key) return res.status(401).json({ error: 'Unauthorized' });
+  if (user.credits < 3) return res.status(402).json({ error: 'Minimaal 3 berichten nodig' });
+  if (!mails || mails.length < 50) return res.status(400).json({ error: 'Te weinig tekst' });
+  try {
+    const profile = await callClaude('Analyseer schrijfstijl. Max 200 woorden: toon, je/u, aanhef, afsluiting, zinslengte.
+
+E-MAILS:
+' + mails);
+    const profiles = JSON.parse(user.style_profiles || '{"default":""}');
+    profiles[name || 'default'] = profile;
+    await saveUser(parseInt(telegram_id)||0, { style_profiles: JSON.stringify(profiles), credits: user.credits - 3 });
+    res.json({ success: true, profile });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Bestaande compose endpoint
 app.post('/api/compose', async (req, res) => {
   const { telegram_id, api_key, mail_text } = req.body;
   const user = await getUser(parseInt(telegram_id), '');
