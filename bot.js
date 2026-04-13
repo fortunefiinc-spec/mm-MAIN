@@ -59,6 +59,68 @@ app.post('/bot' + BOT_TOKEN, function(req, res) {
   res.sendStatus(200);
 });
 
+// Magic link e-mail versturen
+app.post('/api/send-login-email', async function(req, res) {
+  var email = req.body.email;
+  var token = req.body.token;
+  var name  = req.body.name || 'gebruiker';
+  if (!email || !token) return res.status(400).json({ error: 'email en token vereist' });
+  var APP_URL = process.env.MINI_APP_URL || 'https://fortunefiinc-spec.github.io/MM-app';
+  var loginUrl = APP_URL + '?token=' + token;
+  var RESEND_KEY = process.env.RESEND_API_KEY;
+  if (!RESEND_KEY) {
+    // Geen Resend key - stuur inlogcode terug
+    return res.json({ success: true, fallback: true, message: 'Geen e-mail geconfigureerd' });
+  }
+  try {
+    var emailRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + RESEND_KEY },
+      body: JSON.stringify({
+        from: 'MailMate <noreply@mailmate.nl>',
+        to: [email],
+        subject: 'Jouw inloglink voor MailMate',
+        html: '<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">' +
+          '<h2 style="font-size:24px;margin-bottom:8px">Hallo ' + name + '</h2>' +
+          '<p style="color:#666;margin-bottom:24px">Klik op de knop om direct in te loggen bij MailMate. De link is 24 uur geldig.</p>' +
+          '<a href="' + loginUrl + '" style="display:inline-block;background:#b8860b;color:#fff;padding:14px 28px;text-decoration:none;font-weight:600;font-size:15px">Inloggen bij MailMate</a>' +
+          '<p style="color:#999;font-size:12px;margin-top:24px">Of kopieer deze link: ' + loginUrl + '</p>' +
+          '<p style="color:#ccc;font-size:11px;margin-top:16px">Als je deze e-mail niet hebt aangevraagd, kun je hem negeren.</p>' +
+          '</div>'
+      })
+    });
+    var emailData = await emailRes.json();
+    if (emailData.id) {
+      res.json({ success: true });
+    } else {
+      res.status(500).json({ error: 'E-mail versturen mislukt' });
+    }
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin notificatie bij nieuwe registratie
+app.post('/api/notify-admin', async function(req, res) {
+  var naam   = req.body.naam || req.body.name || 'Onbekend';
+  var email  = req.body.email || '';
+  var beroep = req.body.beroep || '';
+  try {
+    // Zoek gebruiker op in Supabase voor telegram_id
+    var { data: newUser } = await sb.from('users').select('*').eq('email', email).single();
+    var tid = newUser ? newUser.telegram_id : 0;
+    bot.sendMessage(ADMIN_ID,
+      'Nieuwe aanvraag via webapp!\n\n' +
+      'Naam: ' + naam + '\n' +
+      'E-mail: ' + email + '\n' +
+      'Beroep: ' + (beroep || 'niet opgegeven'),
+      { reply_markup: { inline_keyboard: [
+        [{ text: 'Goedkeuren + 10 berichten', callback_data: 'approve_email_' + email }],
+        [{ text: 'Weigeren', callback_data: 'deny_email_' + email }]
+      ]}}
+    );
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Stripe webhook
 app.post('/stripe-webhook', async function(req, res) {
   if (!stripe) return res.sendStatus(200);
@@ -694,8 +756,15 @@ bot.on('callback_query', async function(query) {
   else if (data.startsWith('approve_') && isAdmin(tid)) {
     var appId = parseInt(data.replace('approve_', ''));
     await saveUser(appId, { approved: true, credits: 10 });
+    var newUser = await getUser(appId, '');
     bot.sendMessage(tid, 'Goedgekeurd! 10 berichten toegewezen.', { reply_markup: mainKeyboard(tid) });
-    bot.sendMessage(appId, 'Je toegang is goedgekeurd! Je hebt 10 gratis berichten.\n\nTik /start om te beginnen.');
+    bot.sendMessage(appId,
+      'Welkom bij MailMate! Je toegang is goedgekeurd.\n\n' +
+      'Je hebt 10 gratis berichten ontvangen.\n\n' +
+      'Je persoonlijke inlogcode voor de webapp:\n' + (newUser.webhook_key || '') + '\n\n' +
+      'Gebruik deze code op:\nhttps://fortunefiinc-spec.github.io/MM-app\n\n' +
+      'Of tik /start om hier in Telegram te beginnen.'
+    );
   }
 
   else if (data.startsWith('deny_') && isAdmin(tid)) {
@@ -726,6 +795,49 @@ bot.on('callback_query', async function(query) {
       report += x.name + ': ' + x.credits + ' berichten, ' + x.concept_count + ' concepten\n';
     });
     bot.sendMessage(tid, report.slice(0, 3800));
+  }
+
+  else if (data.startsWith('approve_email_') && isAdmin(tid)) {
+    var appEmail = data.replace('approve_email_', '');
+    var webhookKey = 'mm_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    await sb.from('users').update({ approved: true, credits: 10, webhook_key: webhookKey }).eq('email', appEmail);
+    bot.sendMessage(tid, 'Goedgekeurd: ' + appEmail + '\n10 berichten toegewezen.', { reply_markup: mainKeyboard(tid) });
+    // Stuur magic link via e-mail
+    var APP_URL = process.env.MINI_APP_URL || 'https://fortunefiinc-spec.github.io/MM-app';
+    var loginToken = 'lt_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    await sb.from('users').update({ login_token: loginToken }).eq('email', appEmail);
+    var RESEND_KEY = process.env.RESEND_API_KEY;
+    if (RESEND_KEY) {
+      var loginUrl = APP_URL + '?token=' + loginToken;
+      try {
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + RESEND_KEY },
+          body: JSON.stringify({
+            from: 'MailMate <noreply@mailmate.nl>',
+            to: [appEmail],
+            subject: 'Je toegang tot MailMate is goedgekeurd!',
+            html: '<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">' +
+              '<h2 style="font-size:24px;margin-bottom:8px">Welkom bij MailMate!</h2>' +
+              '<p style="color:#666;margin-bottom:8px">Je aanvraag is goedgekeurd. Je hebt 10 gratis berichten ontvangen.</p>' +
+              '<p style="color:#666;margin-bottom:24px">Klik op de knop om direct in te loggen:</p>' +
+              '<a href="' + loginUrl + '" style="display:inline-block;background:#b8860b;color:#fff;padding:14px 28px;text-decoration:none;font-weight:600;font-size:15px">Start met MailMate</a>' +
+              '<p style="color:#999;font-size:12px;margin-top:24px">Of kopieer: ' + loginUrl + '</p>' +
+              '<p style="color:#ccc;font-size:11px;margin-top:16px">De link is 24 uur geldig. Daarna kun je opnieuw een link aanvragen via de webapp.</p>' +
+              '</div>'
+          })
+        });
+      } catch(e) { console.error('E-mail fout:', e.message); }
+    } else {
+      // Geen Resend: stuur webhook_key via Telegram bericht aan admin
+      bot.sendMessage(tid, 'Geen RESEND_API_KEY. Stuur handmatig:\nE-mail: ' + appEmail + '\nCode: ' + webhookKey + '\nLink: ' + APP_URL);
+    }
+  }
+
+  else if (data.startsWith('deny_email_') && isAdmin(tid)) {
+    var denyEmail = data.replace('deny_email_', '');
+    await sb.from('users').delete().eq('email', denyEmail);
+    bot.sendMessage(tid, 'Geweigerd en verwijderd: ' + denyEmail, { reply_markup: mainKeyboard(tid) });
   }
 
   else if (data === 'home') {
