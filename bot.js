@@ -801,13 +801,21 @@ bot.on('callback_query', async function(query) {
     var appEmail = data.replace('approve_email_', '');
     var webhookKey = 'mm_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
     await sb.from('users').update({ approved: true, credits: 10, webhook_key: webhookKey }).eq('email', appEmail);
-    bot.sendMessage(tid, 'Goedgekeurd: ' + appEmail + '\n10 berichten toegewezen.', { reply_markup: mainKeyboard(tid) });
-    // Stuur magic link via e-mail
     var APP_URL = process.env.MINI_APP_URL || 'https://fortunefiinc-spec.github.io/MM-app';
-    var loginToken = 'lt_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-    await sb.from('users').update({ login_token: loginToken }).eq('email', appEmail);
+    // Altijd de code tonen in Telegram
+    bot.sendMessage(tid,
+      'Goedgekeurd: ' + appEmail + '\n\n' +
+      'Stuur dit naar de gebruiker:\n\n' +
+      'Je toegangscode: ' + webhookKey + '\n' +
+      'Inloggen via: ' + APP_URL + '\n\n' +
+      '10 berichten toegewezen.',
+      { reply_markup: mainKeyboard(tid) }
+    );
+    // Probeer ook e-mail te sturen als Resend beschikbaar
     var RESEND_KEY = process.env.RESEND_API_KEY;
     if (RESEND_KEY) {
+      var loginToken = 'lt_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+      await sb.from('users').update({ login_token: loginToken }).eq('email', appEmail);
       var loginUrl = APP_URL + '?token=' + loginToken;
       try {
         await fetch('https://api.resend.com/emails', {
@@ -820,17 +828,14 @@ bot.on('callback_query', async function(query) {
             html: '<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">' +
               '<h2 style="font-size:24px;margin-bottom:8px">Welkom bij MailMate!</h2>' +
               '<p style="color:#666;margin-bottom:8px">Je aanvraag is goedgekeurd. Je hebt 10 gratis berichten ontvangen.</p>' +
-              '<p style="color:#666;margin-bottom:24px">Klik op de knop om direct in te loggen:</p>' +
-              '<a href="' + loginUrl + '" style="display:inline-block;background:#b8860b;color:#fff;padding:14px 28px;text-decoration:none;font-weight:600;font-size:15px">Start met MailMate</a>' +
-              '<p style="color:#999;font-size:12px;margin-top:24px">Of kopieer: ' + loginUrl + '</p>' +
-              '<p style="color:#ccc;font-size:11px;margin-top:16px">De link is 24 uur geldig. Daarna kun je opnieuw een link aanvragen via de webapp.</p>' +
+              '<p style="color:#666;margin-bottom:16px">Je persoonlijke toegangscode: <strong>' + webhookKey + '</strong></p>' +
+              '<a href="' + loginUrl + '" style="display:inline-block;background:#b8860b;color:#fff;padding:14px 28px;text-decoration:none;font-weight:600;font-size:15px">Direct inloggen</a>' +
+              '<p style="color:#999;font-size:12px;margin-top:24px">Of ga naar ' + APP_URL + ' en gebruik de code hierboven.</p>' +
               '</div>'
           })
         });
+        bot.sendMessage(tid, 'E-mail verstuurd naar ' + appEmail);
       } catch(e) { console.error('E-mail fout:', e.message); }
-    } else {
-      // Geen Resend: stuur webhook_key via Telegram bericht aan admin
-      bot.sendMessage(tid, 'Geen RESEND_API_KEY. Stuur handmatig:\nE-mail: ' + appEmail + '\nCode: ' + webhookKey + '\nLink: ' + APP_URL);
     }
   }
 
