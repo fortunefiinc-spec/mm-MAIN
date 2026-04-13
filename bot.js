@@ -800,42 +800,17 @@ bot.on('callback_query', async function(query) {
   else if (data.startsWith('approve_email_') && isAdmin(tid)) {
     var appEmail = data.replace('approve_email_', '');
     var webhookKey = 'mm_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-    await sb.from('users').update({ approved: true, credits: 10, webhook_key: webhookKey }).eq('email', appEmail);
     var APP_URL = process.env.MINI_APP_URL || 'https://fortunefiinc-spec.github.io/MM-app';
-    // Altijd de code tonen in Telegram
-    bot.sendMessage(tid,
-      'Goedgekeurd: ' + appEmail + '\n\n' +
-      'Stuur dit naar de gebruiker:\n\n' +
-      'Je toegangscode: ' + webhookKey + '\n' +
-      'Inloggen via: ' + APP_URL + '\n\n' +
-      '10 berichten toegewezen.',
-      { reply_markup: mainKeyboard(tid) }
-    );
-    // Probeer ook e-mail te sturen als Resend beschikbaar
-    var RESEND_KEY = process.env.RESEND_API_KEY;
-    if (RESEND_KEY) {
-      var loginToken = 'lt_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-      await sb.from('users').update({ login_token: loginToken }).eq('email', appEmail);
-      var loginUrl = APP_URL + '?token=' + loginToken;
-      try {
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + RESEND_KEY },
-          body: JSON.stringify({
-            from: 'MailMate <noreply@mailmate.nl>',
-            to: [appEmail],
-            subject: 'Je toegang tot MailMate is goedgekeurd!',
-            html: '<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">' +
-              '<h2 style="font-size:24px;margin-bottom:8px">Welkom bij MailMate!</h2>' +
-              '<p style="color:#666;margin-bottom:8px">Je aanvraag is goedgekeurd. Je hebt 10 gratis berichten ontvangen.</p>' +
-              '<p style="color:#666;margin-bottom:16px">Je persoonlijke toegangscode: <strong>' + webhookKey + '</strong></p>' +
-              '<a href="' + loginUrl + '" style="display:inline-block;background:#b8860b;color:#fff;padding:14px 28px;text-decoration:none;font-weight:600;font-size:15px">Direct inloggen</a>' +
-              '<p style="color:#999;font-size:12px;margin-top:24px">Of ga naar ' + APP_URL + ' en gebruik de code hierboven.</p>' +
-              '</div>'
-          })
-        });
-        bot.sendMessage(tid, 'E-mail verstuurd naar ' + appEmail);
-      } catch(e) { console.error('E-mail fout:', e.message); }
+    try {
+      var updateResult = await sb.from('users').update({ approved: true, credits: 10, webhook_key: webhookKey }).eq('email', appEmail);
+      if (updateResult.error) {
+        bot.sendMessage(tid, 'Fout bij goedkeuren: ' + updateResult.error.message);
+        return;
+      }
+      bot.sendMessage(tid, 'Goedgekeurd: ' + appEmail);
+      bot.sendMessage(tid, 'Toegangscode voor gebruiker:\n\n' + webhookKey + '\n\nInloglink:\n' + APP_URL);
+    } catch(e) {
+      bot.sendMessage(tid, 'Fout: ' + e.message);
     }
   }
 
