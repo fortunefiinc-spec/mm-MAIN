@@ -107,14 +107,17 @@ app.post('/api/notify-admin', async function(req, res) {
     // Zoek gebruiker op in Supabase voor telegram_id
     var { data: newUser } = await sb.from('users').select('*').eq('email', email).single();
     var tid = newUser ? newUser.telegram_id : 0;
+    // Sla email op in tijdelijke state voor callback
+    var shortId = Date.now().toString(36);
+    pendingApprovals[shortId] = email;
     bot.sendMessage(ADMIN_ID,
       'Nieuwe aanvraag via webapp!\n\n' +
       'Naam: ' + naam + '\n' +
       'E-mail: ' + email + '\n' +
       'Beroep: ' + (beroep || 'niet opgegeven'),
       { reply_markup: { inline_keyboard: [
-        [{ text: 'Goedkeuren + 10 berichten', callback_data: 'approve_email_' + email }],
-        [{ text: 'Weigeren', callback_data: 'deny_email_' + email }]
+        [{ text: 'Goedkeuren + 10 berichten', callback_data: 'aew_' + shortId }],
+        [{ text: 'Weigeren', callback_data: 'dew_' + shortId }]
       ]}}
     );
     res.json({ success: true });
@@ -420,6 +423,7 @@ function checkRate(tid) {
 // SESSION STATE
 // ????????????????????????????????????????
 var states = {};
+var pendingApprovals = {};
 
 function getState(tid) {
   if (!states[tid]) states[tid] = { step: 'idle', lastConcept: '', lastMail: '', style: 'default', trainName: null };
@@ -797,26 +801,26 @@ bot.on('callback_query', async function(query) {
     bot.sendMessage(tid, report.slice(0, 3800));
   }
 
-  else if (data.startsWith('approve_email_') && isAdmin(tid)) {
-    var appEmail = data.replace('approve_email_', '');
+  else if (data.startsWith('aew_') && isAdmin(tid)) {
+    var shortId2 = data.replace('aew_', '');
+    var appEmail = pendingApprovals[shortId2];
+    if (!appEmail) { bot.sendMessage(tid, 'Aanvraag verlopen. Zoek gebruiker handmatig op.'); return; }
     var webhookKey = 'mm_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
     var APP_URL = process.env.MINI_APP_URL || 'https://fortunefiinc-spec.github.io/MM-app';
     try {
       var updateResult = await sb.from('users').update({ approved: true, credits: 10, webhook_key: webhookKey }).eq('email', appEmail);
-      if (updateResult.error) {
-        bot.sendMessage(tid, 'Fout bij goedkeuren: ' + updateResult.error.message);
-        return;
-      }
-      bot.sendMessage(tid, 'Goedgekeurd: ' + appEmail);
-      bot.sendMessage(tid, 'Toegangscode voor gebruiker:\n\n' + webhookKey + '\n\nInloglink:\n' + APP_URL);
-    } catch(e) {
-      bot.sendMessage(tid, 'Fout: ' + e.message);
-    }
+      if (updateResult.error) { bot.sendMessage(tid, 'Fout: ' + updateResult.error.message); return; }
+      delete pendingApprovals[shortId2];
+      bot.sendMessage(tid, 'Goedgekeurd: ' + appEmail + '\n\nStuur dit naar de gebruiker:\n\nInlogcode: ' + webhookKey + '\nLink: ' + APP_URL);
+    } catch(e) { bot.sendMessage(tid, 'Fout: ' + e.message); }
   }
 
-  else if (data.startsWith('deny_email_') && isAdmin(tid)) {
-    var denyEmail = data.replace('deny_email_', '');
+  else if (data.startsWith('dew_') && isAdmin(tid)) {
+    var shortId3 = data.replace('dew_', '');
+    var denyEmail = pendingApprovals[shortId3];
+    if (!denyEmail) { bot.sendMessage(tid, 'Aanvraag verlopen.'); return; }
     await sb.from('users').delete().eq('email', denyEmail);
+    delete pendingApprovals[shortId3];
     bot.sendMessage(tid, 'Geweigerd en verwijderd: ' + denyEmail, { reply_markup: mainKeyboard(tid) });
   }
 
