@@ -2,832 +2,729 @@
 <html lang="nl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>MailMate</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>MailMate App</title>
+<meta name="theme-color" content="#0d0d0d">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;1,9..144,300;1,9..144,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-:root {
-  --ink: #18140f;
-  --paper: #f6f1e9;
-  --cream: #ede8de;
-  --warm: #c4a052;
-  --warm2: #a8823a;
-  --warm-pale: #f5edda;
-  --sage: #3d7a52;
-  --muted: #8a8070;
-  --border: #d8d0c4;
-  --white: #fff;
-  --shadow: rgba(24,20,15,0.10);
-  --danger: #c0392b;
-  --font-serif: 'Fraunces', Georgia, serif;
-  --font-mono: 'DM Mono', monospace;
-  --tg-safe-top: env(safe-area-inset-top, 0px);
-  --tg-safe-bottom: env(safe-area-inset-bottom, 0px);
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#0d0d0d;--paper:#f8f6f1;--cream:#f0ece3;
+  --gold:#b8860b;--gold2:#d4a017;--gold-pale:#faf0d7;
+  --muted:#6b6560;--border:#ddd8ce;--white:#fff;
+  --red:#c0392b;--green:#2d7a4f;
+  --serif:'Cormorant Garamond',Georgia,serif;
+  --sans:'Outfit',system-ui,sans-serif;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
 }
+html,body{height:100%;overflow:hidden}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;display:flex;flex-direction:column}
+.screen{display:none;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(72px + var(--safe-bottom))}
+.screen.active{display:flex;flex-direction:column}
+@keyframes sf{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.sf{animation:sf .22s ease-out}
 
-/* Telegram theme sync */
-body {
-  min-height: 100vh;
-  background: var(--tg-theme-bg-color, var(--paper));
-  color: var(--tg-theme-text-color, var(--ink));
-  font-family: var(--font-mono);
-  font-size: 14px;
-  line-height: 1.6;
-  overflow-x: hidden;
-  padding-top: var(--tg-safe-top);
-  padding-bottom: calc(var(--tg-safe-bottom) + 72px);
+/* AUTH */
+#screen-auth{background:var(--ink);justify-content:center;align-items:center;padding:40px 28px;padding-top:calc(40px + var(--safe-top))}
+.auth-logo{font-family:var(--serif);font-size:44px;font-weight:300;color:var(--paper);text-align:center;margin-bottom:4px}
+.auth-logo em{font-style:italic;color:var(--gold2)}
+.auth-tagline{font-size:13px;color:rgba(255,255,255,0.3);text-align:center;margin-bottom:44px}
+.auth-card{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.09);padding:32px 24px;width:100%;max-width:360px}
+.auth-tabs{display:flex;margin-bottom:22px;border:1px solid rgba(255,255,255,0.08)}
+.at{flex:1;padding:9px;font-size:13px;font-weight:500;background:transparent;color:rgba(255,255,255,0.35);border:none;cursor:pointer;transition:all .2s;font-family:var(--sans)}
+.at.active{background:var(--gold);color:var(--ink)}
+.fi{margin-bottom:12px}
+.fi label{display:block;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin-bottom:6px}
+.fi input{width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:var(--paper);font-family:var(--sans);font-size:14px;padding:11px 13px}
+.fi input:focus{outline:none;border-color:var(--gold)}
+.fi input::placeholder{color:rgba(255,255,255,0.18)}
+.btn-auth{width:100%;padding:13px;background:var(--gold);color:var(--ink);font-family:var(--sans);font-size:13px;font-weight:600;letter-spacing:0.06em;border:none;cursor:pointer;margin-top:6px;transition:all .2s}
+.btn-auth:hover{background:var(--gold2)}
+.auth-msg{font-size:12px;text-align:center;margin-top:9px;min-height:16px}
+.auth-msg.err{color:#e74c3c}.auth-msg.ok{color:#2ecc71}
+.auth-switch{font-size:12px;color:rgba(255,255,255,0.25);text-align:center;margin-top:14px}
+.auth-switch a{color:var(--gold2);cursor:pointer}
+
+/* TOPBAR */
+.topbar{position:sticky;top:0;z-index:50;background:rgba(248,246,241,0.95);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:calc(10px + var(--safe-top)) 18px 10px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.tl-logo{font-family:var(--serif);font-size:20px;font-weight:400;display:flex;align-items:center;gap:8px}
+.lm{width:28px;height:28px;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;border-radius:2px;font-family:var(--serif)}
+.tl-right{display:flex;align-items:center;gap:8px}
+.cr-pill{background:var(--gold-pale);border:1px solid rgba(184,134,11,0.2);padding:5px 11px;font-size:12px;font-weight:500;color:var(--gold);cursor:pointer;white-space:nowrap;transition:all .2s}
+.cr-pill:hover{background:var(--gold);color:var(--ink)}
+.av{width:30px;height:30px;background:var(--cream);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border)}
+
+/* BOTTOM NAV */
+.bnav{position:fixed;bottom:0;left:0;right:0;z-index:50;background:var(--white);border-top:1px solid var(--border);padding:7px 0 calc(7px + var(--safe-bottom));display:flex}
+.ni{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 4px;cursor:pointer;background:none;border:none;font-family:var(--sans);transition:all .15s}
+.ni .ic{font-size:17px;transition:transform .2s}
+.ni .lb{font-size:10px;color:var(--muted);font-weight:400}
+.ni.active .lb{color:var(--gold);font-weight:500}
+.ni.active .ic{transform:translateY(-2px)}
+.ni.center{background:var(--ink);border-radius:10px;margin:0 6px;flex:1.3}
+.ni.center .lb{color:rgba(255,255,255,0.5)}
+.ni.center.active .lb{color:var(--gold2)}
+
+/* COMPOSE */
+.carea{padding:16px;flex:1}
+.ch h2{font-family:var(--serif);font-size:24px;font-weight:400;margin-bottom:3px}
+.ch p{font-size:13px;color:var(--muted);font-weight:300;margin-bottom:16px}
+.style-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:3px;margin-bottom:14px}
+.sb{padding:6px 13px;font-size:12px;font-weight:500;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all .2s;font-family:var(--sans);border-radius:20px}
+.sb.active{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.mail-box{background:var(--white);border:1px solid var(--border);padding:14px;margin-bottom:12px;transition:border-color .2s}
+.mail-box:focus-within{border-color:var(--gold)}
+.mail-box label{font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:7px}
+.mail-box textarea{width:100%;border:none;background:transparent;font-family:var(--sans);font-size:14px;color:var(--ink);line-height:1.7;resize:none;min-height:130px;font-weight:300}
+.mail-box textarea:focus{outline:none}
+.mail-box textarea::placeholder{color:rgba(107,101,96,0.45)}
+.opts-row{display:flex;gap:7px;margin-bottom:13px;flex-wrap:wrap}
+.ob{padding:6px 11px;font-size:12px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .2s;font-family:var(--sans)}
+.ob.active{border-color:var(--gold);color:var(--gold);background:var(--gold-pale)}
+.btn-go{width:100%;padding:13px;background:var(--ink);color:var(--paper);font-family:var(--sans);font-size:13px;font-weight:500;letter-spacing:0.05em;border:none;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-go:hover{background:var(--gold)}
+.btn-go:disabled{background:var(--cream);color:var(--muted);cursor:not-allowed}
+
+/* RESULT */
+.rcard{background:var(--white);border:1px solid var(--border);margin-top:14px}
+.rh{padding:11px 14px;background:var(--ink);display:flex;align-items:center;justify-content:space-between}
+.rh span{font-size:11px;color:rgba(255,255,255,0.45);letter-spacing:0.08em;text-transform:uppercase}
+.sent-badge{padding:3px 9px;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase}
+.sent-badge.urgent{background:#e74c3c;color:#fff}
+.sent-badge.negatief{background:#e67e22;color:#fff}
+.sent-badge.normaal,.sent-badge.positief{background:var(--gold);color:var(--ink)}
+.rbody{padding:16px;font-size:14px;color:var(--ink);line-height:1.78;font-weight:300;white-space:pre-wrap;min-height:60px}
+.rsub{padding:9px 14px;background:var(--cream);border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
+.rsub strong{color:var(--ink);font-weight:500}
+.ract{padding:11px 14px;border-top:1px solid var(--border);display:flex;gap:7px;flex-wrap:wrap}
+.ra{padding:7px 12px;font-size:12px;font-weight:500;border:1px solid var(--border);background:transparent;color:var(--ink);cursor:pointer;transition:all .2s;font-family:var(--sans)}
+.ra:hover{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.ra.prim{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.ra.prim:hover{background:var(--gold);border-color:var(--gold)}
+.ra.done{background:var(--green);color:#fff;border-color:var(--green)}
+.refine-row{display:flex;gap:7px;padding:11px 14px;border-top:1px solid var(--border);background:var(--cream)}
+.ri{flex:1;background:var(--white);border:1px solid var(--border);font-family:var(--sans);font-size:13px;padding:9px 12px;color:var(--ink)}
+.ri:focus{outline:none;border-color:var(--gold)}
+.btn-rf{padding:9px 14px;background:var(--ink);color:var(--paper);font-size:12px;font-weight:500;border:none;cursor:pointer;font-family:var(--sans);white-space:nowrap}
+
+/* HISTORY */
+.hlist{padding:16px;display:flex;flex-direction:column;gap:9px}
+.hitem{background:var(--white);border:1px solid var(--border);padding:14px;cursor:pointer;transition:all .2s}
+.hitem:hover{border-color:var(--gold);background:var(--gold-pale)}
+.hsubj{font-family:var(--serif);font-size:15px;font-weight:400;margin-bottom:3px}
+.hprev{font-size:12px;color:var(--muted);font-weight:300;line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.hdate{font-size:10px;color:var(--muted);margin-top:6px}
+
+/* SETTINGS */
+.slist{padding:16px;display:flex;flex-direction:column;gap:2px}
+.stitle{font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);padding:14px 0 7px}
+.sitem{background:var(--white);border:1px solid var(--border);padding:14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:background .15s}
+.sitem:hover{background:var(--cream)}
+.sitem h4{font-size:14px;font-weight:500;margin-bottom:2px}
+.sitem p{font-size:12px;color:var(--muted);font-weight:300}
+.sarr{color:var(--border);font-size:16px}
+.sbadge{background:var(--gold-pale);color:var(--gold);font-size:10px;font-weight:600;padding:2px 7px}
+
+/* KENNISBANK */
+.karea{padding:16px;display:flex;flex-direction:column;gap:12px}
+.kbox{background:var(--white);border:1px solid var(--border);padding:14px}
+.kbox label{font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:8px}
+.kbox textarea{width:100%;border:none;background:transparent;font-family:var(--sans);font-size:13px;color:var(--ink);line-height:1.7;resize:none;min-height:110px;font-weight:300}
+.kbox textarea:focus{outline:none}
+.btn-save{padding:10px 18px;background:var(--ink);color:var(--paper);font-size:12px;font-weight:500;border:none;cursor:pointer;font-family:var(--sans);transition:all .2s}
+.btn-save:hover{background:var(--gold)}
+.btn-save.saved{background:var(--green)}
+
+/* WEBHOOK */
+.warea{padding:16px;display:flex;flex-direction:column;gap:11px}
+.wcard{background:var(--white);border:1px solid var(--border);padding:18px}
+.wcard h3{font-family:var(--serif);font-size:18px;font-weight:400;margin-bottom:6px}
+.wcard p{font-size:13px;color:var(--muted);font-weight:300;line-height:1.65;margin-bottom:12px}
+.code{background:var(--ink);padding:12px;font-family:monospace;font-size:12px;color:rgba(255,255,255,0.7);overflow-x:auto;word-break:break-all;line-height:1.6}
+.code .hl{color:var(--gold2)}
+.wstep{display:flex;gap:9px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border)}
+.wstep:last-child{border:none}
+.wn{width:22px;height:22px;background:var(--gold-pale);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;border-radius:50%}
+.wt{font-size:13px;color:var(--ink);font-weight:300;line-height:1.55}
+
+/* EMPTY STATE */
+.empty{text-align:center;padding:52px 20px;color:var(--muted)}
+.empty h3{font-family:var(--serif);font-size:20px;font-weight:400;color:var(--ink);margin-bottom:7px}
+.empty p{font-size:13px;font-weight:300;line-height:1.7}
+
+/* CREDITS */
+.clist{padding:16px;display:flex;flex-direction:column;gap:9px}
+.cplan{border:1px solid var(--border);padding:18px;cursor:pointer;transition:all .2s;display:flex;justify-content:space-between;align-items:center;background:var(--white)}
+.cplan:hover{border-color:var(--gold)}
+.cplan.feat{background:var(--ink)}
+.cplan h4{font-family:var(--serif);font-size:18px;font-weight:400}
+.cplan p{font-size:12px;color:var(--muted);margin-top:2px}
+.cplan.feat h4{color:var(--paper)}
+.cplan.feat p{color:rgba(255,255,255,0.35)}
+.cprice{font-family:var(--serif);font-size:28px;font-weight:300}
+.cplan.feat .cprice{color:var(--paper)}
+
+/* LOADING */
+.ldg{position:fixed;inset:0;background:rgba(248,246,241,0.92);backdrop-filter:blur(4px);z-index:200;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+.ldg.show{display:flex}
+.spinner{width:34px;height:34px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ldg-t{font-family:var(--serif);font-size:18px;font-weight:400}
+.ldg-s{font-size:12px;color:var(--muted)}
+
+/* TOAST */
+.toast{position:fixed;bottom:calc(78px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(16px);background:var(--ink);color:var(--paper);padding:9px 18px;font-size:13px;z-index:300;opacity:0;transition:all .28s;pointer-events:none;white-space:nowrap;max-width:90vw;text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* MODAL */
+.moverlay{position:fixed;inset:0;background:rgba(13,13,13,0.65);z-index:150;display:none;align-items:flex-end}
+.moverlay.show{display:flex}
+.modal{background:var(--paper);width:100%;max-height:85vh;overflow-y:auto;padding:22px 18px;padding-bottom:calc(22px + var(--safe-bottom));animation:slideUp .25s ease-out;position:relative}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.modal h3{font-family:var(--serif);font-size:21px;font-weight:400;margin-bottom:12px}
+.mcls{position:absolute;top:18px;right:18px;background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)}
+
+/* DESKTOP SIDEBAR */
+@media(min-width:1024px){
+  body{flex-direction:row}
+  .sidebar{width:240px;background:var(--ink);flex-shrink:0;display:none;flex-direction:column;padding:28px 0;padding-top:calc(28px + var(--safe-top))}
+  .sidebar.on{display:flex}
+  .sl-logo{font-family:var(--serif);font-size:24px;font-weight:300;color:var(--paper);padding:0 22px 28px;border-bottom:1px solid rgba(255,255,255,0.07)}
+  .sl-logo em{font-style:italic;color:var(--gold2)}
+  .sl-nav{flex:1;padding:14px 0}
+  .sl-item{display:flex;align-items:center;gap:11px;padding:11px 22px;cursor:pointer;background:transparent;border:none;width:100%;text-align:left;font-family:var(--sans);transition:all .2s;border-right:2px solid transparent}
+  .sl-item:hover{background:rgba(255,255,255,0.04)}
+  .sl-item.active{background:rgba(184,134,11,0.1);border-right-color:var(--gold)}
+  .sl-item .si{font-size:15px;width:18px;text-align:center}
+  .sl-item .sl{font-size:13px;color:rgba(255,255,255,0.5);font-weight:400}
+  .sl-item.active .sl{color:var(--paper)}
+  .sl-bottom{padding:14px 22px;border-top:1px solid rgba(255,255,255,0.07)}
+  .sl-cr-label{font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:5px}
+  .sl-cr-val{font-family:var(--serif);font-size:26px;font-weight:300;color:var(--paper)}
+  .sl-cr-sub{font-size:11px;color:rgba(255,255,255,0.25)}
+  .sl-logout{display:block;padding:10px 22px;font-size:12px;color:rgba(255,255,255,0.2);cursor:pointer;background:none;border:none;font-family:var(--sans);text-align:left;width:100%;margin-top:8px}
+  .sl-logout:hover{color:var(--gold2)}
+  .main-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .bnav{display:none}
+  .screen{max-width:none}
 }
-
-::-webkit-scrollbar { width: 3px; }
-::-webkit-scrollbar-thumb { background: var(--warm); border-radius: 2px; }
-
-/* ── SCREENS ── */
-.screen { display: none; padding: 0 16px; padding-top: 16px; animation: fadeUp .25s ease-out; }
-.screen.active { display: block; }
-@keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
-
-/* ── TOPBAR ── */
-.topbar {
-  position: sticky; top: 0; z-index: 50;
-  background: rgba(246,241,233,0.94);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 16px;
-  display: flex; align-items: center; justify-content: space-between;
-  margin: 0 -16px 16px;
+@media(max-width:1023px){
+  .sidebar{display:none!important}
+  .main-wrap{flex:1;display:flex;flex-direction:column}
 }
-.topbar-logo { font-family: var(--font-serif); font-weight: 600; font-size: 18px; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
-.topbar-mark { width: 26px; height: 26px; background: var(--ink); color: var(--paper); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
-.topbar-credits { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--warm2); font-family: var(--font-serif); font-weight: 400; }
-.topbar-credits-num { font-size: 16px; font-weight: 300; }
-
-/* ── BOTTOM NAV ── */
-.bottom-nav {
-  position: fixed; bottom: 0; left: 0; right: 0;
-  background: var(--ink);
-  display: flex;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  padding-bottom: var(--tg-safe-bottom);
-  z-index: 100;
-}
-.nav-tab {
-  flex: 1; padding: 12px 4px 10px;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  background: none; border: none; cursor: pointer;
-  color: rgba(255,255,255,0.35); font-family: var(--font-mono);
-  font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
-  transition: color .2s;
-}
-.nav-tab.active { color: var(--warm); }
-.nav-tab-icon { font-size: 18px; line-height: 1; }
-
-/* ── CARDS ── */
-.card { background: var(--white); border: 1px solid var(--border); padding: 20px; margin-bottom: 12px; box-shadow: 0 1px 6px var(--shadow); }
-.card-title { font-family: var(--font-serif); font-size: 17px; font-weight: 400; margin-bottom: 4px; }
-.card-sub { font-size: 11px; color: var(--muted); }
-
-/* ── STAT ROW ── */
-.stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-.stat-card { background: var(--white); border: 1px solid var(--border); padding: 16px; }
-.stat-card.accent { border-left: 3px solid var(--warm); }
-.stat-num { font-family: var(--font-serif); font-size: 30px; font-weight: 300; line-height: 1; }
-.stat-label { font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-top: 3px; }
-
-/* ── SECTION LABEL ── */
-.section-label { font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--warm2); margin-bottom: 8px; margin-top: 20px; }
-.section-title { font-family: var(--font-serif); font-size: 22px; font-weight: 300; margin-bottom: 6px; }
-.section-title em { font-style: italic; color: var(--warm2); }
-
-/* ── INPUTS ── */
-textarea, input[type=text], input[type=password], input[type=email] {
-  width: 100%; background: var(--white); border: 1px solid var(--border);
-  color: var(--ink); font-family: var(--font-mono); font-size: 13px;
-  line-height: 1.65; padding: 13px 15px; transition: border-color .2s;
-  -webkit-appearance: none; border-radius: 0;
-}
-textarea:focus, input:focus { outline: none; border-color: var(--warm); box-shadow: 0 0 0 3px rgba(196,160,82,0.12); }
-textarea::placeholder, input::placeholder { color: #c0b8ac; }
-textarea { resize: none; }
-textarea.reply-area { border-left: 3px solid var(--warm2); }
-
-/* ── DROP ZONE ── */
-.drop-zone {
-  border: 2px dashed var(--border); background: var(--cream);
-  padding: 24px 16px; text-align: center; cursor: pointer; transition: all .2s;
-  margin-bottom: 12px;
-}
-.drop-zone.over, .drop-zone:active { border-color: var(--warm); background: var(--warm-pale); }
-.drop-zone.loaded { border-color: var(--sage); border-style: solid; background: rgba(61,122,82,0.05); }
-.drop-icon { font-size: 24px; margin-bottom: 8px; opacity: .5; }
-.drop-title { font-family: var(--font-serif); font-size: 15px; margin-bottom: 4px; }
-.drop-sub { font-size: 11px; color: var(--muted); }
-
-/* ── BUTTONS ── */
-.btn {
-  border: none; cursor: pointer; font-family: var(--font-mono);
-  font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
-  padding: 13px 20px; transition: all .2s; display: inline-flex;
-  align-items: center; justify-content: center; gap: 8px; width: 100%;
-  -webkit-tap-highlight-color: transparent; border-radius: 0;
-}
-.btn-primary { background: var(--ink); color: var(--paper); }
-.btn-primary:active { background: var(--warm2); }
-.btn-primary:disabled { opacity: .35; }
-.btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
-.btn-ghost:active { border-color: var(--warm); color: var(--warm2); }
-.btn-warm { background: var(--warm); color: var(--ink); font-weight: 500; }
-.btn-warm:active { background: var(--warm2); color: var(--paper); }
-.btn-sm { padding: 9px 14px; font-size: 10px; width: auto; }
-.btn-row { display: flex; gap: 8px; margin-top: 10px; }
-
-/* ── INFO / STRIP ── */
-.info-strip { background: rgba(196,160,82,0.1); border: 1px solid rgba(196,160,82,0.3); border-left: 3px solid var(--warm); padding: 10px 13px; font-size: 12px; color: var(--muted); display: flex; gap: 8px; margin-bottom: 14px; line-height: 1.6; }
-.info-icon { color: var(--warm2); flex-shrink: 0; }
-.disclaimer { border: 1px solid var(--border); padding: 9px 13px; font-size: 11px; color: var(--muted); display: flex; gap: 7px; background: var(--cream); margin-top: 14px; }
-
-/* ── EMPTY / LOADING ── */
-.empty-box { background: var(--cream); border: 2px dashed var(--border); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 7px; min-height: 180px; color: var(--muted); font-size: 12px; text-align: center; line-height: 1.8; padding: 20px; }
-.empty-icon { font-size: 24px; opacity: .3; }
-.loading-box { background: var(--white); border: 1px solid var(--border); border-left: 3px solid var(--warm); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; min-height: 180px; }
-.loading-label { font-size: 12px; color: var(--warm2); letter-spacing: .1em; animation: osc 1.5s ease-in-out infinite; }
-@keyframes osc { 0%,100%{opacity:1} 50%{opacity:.3} }
-.dots { display: flex; gap: 5px; }
-.dots span { width: 6px; height: 6px; background: var(--warm); border-radius: 50%; animation: db 1.2s ease-in-out infinite; }
-.dots span:nth-child(2){animation-delay:.15s} .dots span:nth-child(3){animation-delay:.3s}
-@keyframes db { 0%,80%,100%{transform:translateY(0);opacity:.3} 40%{transform:translateY(-6px);opacity:1} }
-
-/* ── PROFILE CARD ── */
-.profile-card { background: var(--white); border: 1px solid var(--border); border-left: 3px solid var(--warm2); padding: 14px 16px; margin-bottom: 14px; }
-.profile-badge { font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--warm2); border: 1px solid rgba(196,160,82,0.4); padding: 2px 7px; display: inline-block; margin-bottom: 6px; }
-.profile-text { font-size: 12px; color: var(--muted); line-height: 1.7; }
-
-/* ── HISTORY LIST ── */
-.hist-item { background: var(--white); border: 1px solid var(--border); border-bottom: none; padding: 13px 15px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.hist-item:last-child { border-bottom: 1px solid var(--border); }
-.hist-subject { font-size: 12px; font-weight: 500; margin-bottom: 2px; }
-.hist-meta { font-size: 10px; color: var(--muted); }
-.badge { display: inline-block; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 7px; flex-shrink: 0; }
-.badge-green { background: rgba(61,122,82,0.1); color: var(--sage); border: 1px solid rgba(61,122,82,0.25); }
-.badge-warm { background: rgba(196,160,82,0.1); color: var(--warm2); border: 1px solid rgba(196,160,82,0.3); }
-
-/* ── CREDIT CARDS ── */
-.credit-grid { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-.credit-card { background: var(--white); border: 1px solid var(--border); padding: 18px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all .2s; }
-.credit-card:active { border-color: var(--warm); background: var(--warm-pale); }
-.credit-card.popular { border-color: var(--warm); border-width: 2px; }
-.credit-amount { font-family: var(--font-serif); font-size: 28px; font-weight: 300; color: var(--warm2); }
-.credit-info { font-size: 10px; color: var(--muted); margin-top: 2px; }
-.credit-price { font-family: var(--font-serif); font-size: 20px; font-weight: 400; }
-
-/* ── ADMIN ── */
-.admin-user-card { background: var(--white); border: 1px solid var(--border); border-bottom: none; padding: 13px 15px; }
-.admin-user-card:last-child { border-bottom: 1px solid var(--border); }
-.admin-user-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
-.admin-user-meta { font-size: 10px; color: var(--muted); display: flex; gap: 10px; margin-bottom: 8px; }
-.admin-actions { display: flex; gap: 7px; }
-
-/* ── OR DIVIDER ── */
-.or-divider { display: flex; align-items: center; gap: 10px; margin: 12px 0; color: var(--muted); font-size: 11px; }
-.or-divider::before, .or-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-
-/* ── TOAST ── */
-#toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(10px); background: var(--ink); color: var(--paper); font-family: var(--font-serif); font-style: italic; font-size: 13px; padding: 10px 22px; opacity: 0; transition: all .28s; pointer-events: none; z-index: 9999; box-shadow: 0 6px 24px var(--shadow); white-space: nowrap; }
-#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
-/* ── ADMIN BADGE ── */
-.admin-indicator { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--warm2); letter-spacing: .1em; text-transform: uppercase; padding: 6px 12px; background: rgba(196,160,82,0.1); border: 1px solid rgba(196,160,82,0.3); margin-bottom: 14px; }
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:var(--border)}
 </style>
 </head>
 <body>
 
-<!-- ── SCREENS ── -->
+<div class="ldg" id="ldg"><div class="spinner"></div><div class="ldg-t">MailMate</div><div class="ldg-s" id="ldg-s">Laden...</div></div>
+<div class="toast" id="toast"></div>
+<div class="moverlay" id="moverlay" onclick="closeMod()"><div class="modal" id="modal" onclick="event.stopPropagation()"><button class="mcls" onclick="closeMod()">×</button><div id="mbody"></div></div></div>
 
-<!-- DASHBOARD -->
-<div class="screen active" id="screen-dashboard">
-  <div class="topbar">
-    <div class="topbar-logo"><div class="topbar-mark">M</div>MailMate</div>
-    <div class="topbar-credits">
-      <span class="topbar-credits-num" id="top-credits">—</span>
-      credits
+<!-- AUTH -->
+<div class="screen active" id="screen-auth">
+  <div class="auth-logo">Mail<em>Mate</em></div>
+  <div class="auth-tagline">AI e-mail assistent in jouw stijl</div>
+  <div class="auth-card">
+    <div class="auth-tabs">
+      <button class="at active" id="tab-btn-login" onclick="swAuthTab('login')">Inloggen</button>
+      <button class="at" id="tab-btn-reg" onclick="swAuthTab('reg')">Aanmelden</button>
     </div>
-  </div>
 
-  <div class="stat-row">
-    <div class="stat-card accent">
-      <div class="stat-num" id="dash-credits">—</div>
-      <div class="stat-label">Credits</div>
+    <!-- INLOGGEN MET CODE -->
+    <div id="tab-login">
+      <p style="font-size:13px;color:rgba(255,255,255,0.35);margin-bottom:20px;font-weight:300;line-height:1.65">Voer je persoonlijke toegangscode in. Je hebt deze ontvangen na goedkeuring.</p>
+      <div class="fi"><label>Toegangscode</label><input type="text" id="login-code" placeholder="mm_xxxxxxxxxxxx" autocomplete="off" style="letter-spacing:0.04em"></div>
+      <button class="btn-auth" onclick="doCodeLogin()">Inloggen &rarr;</button>
+      <div class="auth-msg" id="login-msg"></div>
+      <p style="font-size:11px;color:rgba(255,255,255,0.15);text-align:center;margin-top:12px">Nog geen account? Klik op Aanmelden.</p>
     </div>
-    <div class="stat-card">
-      <div class="stat-num" id="dash-concepts">—</div>
-      <div class="stat-label">Concepten</div>
-    </div>
-  </div>
 
-  <div class="card" id="dash-agent-status">
-    <div class="card-title">Agent status</div>
-    <div class="card-sub" id="dash-agent-sub">Laadt...</div>
-  </div>
-
-  <div class="section-label">Snel starten</div>
-  <button class="btn btn-primary" style="margin-bottom:10px;" onclick="goTo('compose')">✍ Nieuw concept schrijven</button>
-  <button class="btn btn-ghost" onclick="goTo('agent')">◈ Agent trainen</button>
-
-  <div class="section-label" style="margin-top:20px;">Recente activiteit</div>
-  <div id="dash-recent"></div>
-</div>
-
-<!-- AGENT -->
-<div class="screen" id="screen-agent">
-  <div class="topbar">
-    <div class="topbar-logo"><div class="topbar-mark">M</div>Mijn Agent</div>
-    <div class="topbar-credits"><span class="topbar-credits-num" id="agent-top-credits">—</span> cr</div>
-  </div>
-
-  <div class="info-strip">
-    <span class="info-icon">◈</span>
-    <span>Drop je eigen geschreven mails. Hoe meer, hoe beter. Hertrainen kost 3 credits.</span>
-  </div>
-
-  <div class="drop-zone" id="agent-drop"
-    ondragover="ev.preventDefault();this.classList.add('over')"
-    ondragleave="this.classList.remove('over')"
-    ondrop="handleAgentDrop(event)"
-    onclick="document.getElementById('agent-file').click()">
-    <input type="file" id="agent-file" accept=".eml,.txt" multiple style="display:none" onchange="handleAgentFiles(event)">
-    <div class="drop-icon">📧</div>
-    <div class="drop-title">Sleep .eml bestanden</div>
-    <div class="drop-sub">Of tik om bestanden te kiezen</div>
-  </div>
-
-  <div class="or-divider">of plak als tekst</div>
-
-  <textarea id="train-mails" rows="8" placeholder="Van: jij@bedrijf.nl&#10;Onderwerp: Bevestiging afspraak&#10;&#10;Hallo Jan,&#10;&#10;Bedankt voor je bericht...&#10;&#10;——&#10;&#10;[Meer mails hieronder]"></textarea>
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;margin-bottom:12px;">
-    <span style="font-size:11px;color:var(--muted);" id="train-counter">0 woorden</span>
-  </div>
-  <button class="btn btn-primary" onclick="trainAgent()" id="btn-train">Agent trainen (3 credits) →</button>
-
-  <div style="margin-top:20px;">
-    <div class="section-label">Huidig profiel</div>
-    <div class="profile-card" id="agent-profile-card" style="display:none;">
-      <div class="profile-badge">Actief</div>
-      <div class="profile-text" id="agent-profile-text"></div>
-    </div>
-    <div class="empty-box" id="agent-profile-empty">
-      <div class="empty-icon">◈</div>
-      Nog geen agent getraind
+    <!-- AANMELDEN -->
+    <div id="tab-reg" style="display:none">
+      <p style="font-size:13px;color:rgba(255,255,255,0.35);margin-bottom:20px;font-weight:300;line-height:1.65">Maak een account aan. Je ontvangt je toegangscode zodra je aanvraag is goedgekeurd.</p>
+      <div class="fi"><label>Je naam</label><input type="text" id="reg-naam" placeholder="Jan Jansen" autocomplete="name"></div>
+      <div class="fi"><label>E-mailadres</label><input type="email" id="reg-email" placeholder="naam@bedrijf.nl" autocomplete="email"></div>
+      <div class="fi"><label>Je beroep of bedrijf</label><input type="text" id="reg-beroep" placeholder="Bijv: Assurantiekantoor"></div>
+      <button class="btn-auth" onclick="doRegister()">Aanvraag indienen &rarr;</button>
+      <div class="auth-msg" id="reg-msg"></div>
     </div>
   </div>
 </div>
 
-<!-- COMPOSE -->
-<div class="screen" id="screen-compose">
-  <div class="topbar">
-    <div class="topbar-logo"><div class="topbar-mark">M</div>Concept</div>
-    <div class="topbar-credits"><span class="topbar-credits-num" id="compose-top-credits">—</span> cr</div>
+<!-- SIDEBAR -->
+<div class="sidebar" id="sidebar">
+  <div class="sl-logo">Mail<em>Mate</em></div>
+  <div class="sl-nav">
+    <button class="sl-item active" id="sb-compose" onclick="go('compose')"><span class="si">✍</span><span class="sl">Concept schrijven</span></button>
+    <button class="sl-item" id="sb-history" onclick="go('history')"><span class="si">◷</span><span class="sl">Geschiedenis</span></button>
+    <button class="sl-item" id="sb-clients" onclick="go('clients')"><span class="si">👥</span><span class="sl">Klanten</span></button>
+    <button class="sl-item" id="sb-kennis" onclick="go('kennis')"><span class="si">📚</span><span class="sl">Kennisbank</span></button>
+    <button class="sl-item" id="sb-webhook" onclick="go('webhook')"><span class="si">🔗</span><span class="sl">Koppeling</span></button>
+    <button class="sl-item" id="sb-settings" onclick="go('settings')"><span class="si">⚙</span><span class="sl">Instellingen</span></button>
   </div>
-
-  <div class="profile-card" id="compose-profile-strip" style="display:none;">
-    <div class="profile-badge">Agent actief</div>
-    <div class="profile-text" id="compose-profile-text"></div>
+  <div class="sl-bottom">
+    <div class="sl-cr-label">Saldo</div>
+    <div class="sl-cr-val" id="sb-cr">—</div>
+    <div class="sl-cr-sub">berichten</div>
   </div>
-  <div class="info-strip" id="compose-no-agent" style="display:none;">
-    <span class="info-icon">⚠</span>
-    <span>Train eerst je agent. <button onclick="goTo('agent')" style="background:none;border:none;color:var(--warm2);cursor:pointer;font-family:var(--font-mono);font-size:12px;text-decoration:underline;">Ga naar Agent →</button></span>
-  </div>
-
-  <div class="drop-zone" id="compose-drop"
-    ondragover="event.preventDefault();this.classList.add('over')"
-    ondragleave="this.classList.remove('over')"
-    ondrop="handleComposeDrop(event)"
-    onclick="document.getElementById('compose-file').click()">
-    <input type="file" id="compose-file" accept=".eml" style="display:none" onchange="handleComposeFile(event)">
-    <div class="drop-icon">📨</div>
-    <div class="drop-title" id="compose-drop-title">Sleep .eml vanuit Outlook</div>
-    <div class="drop-sub">Of tik om te kiezen</div>
-  </div>
-
-  <div class="or-divider">of plak handmatig</div>
-
-  <textarea id="incoming-mail" rows="7" placeholder="Van: klant@voorbeeld.nl&#10;Onderwerp: Vraag over levering&#10;&#10;Goedemiddag,&#10;&#10;Ik had een vraag..."></textarea>
-
-  <button class="btn btn-primary" style="margin-top:10px;" onclick="generateReply()" id="btn-generate">
-    Concept genereren (1 credit) →
-  </button>
-
-  <div style="margin-top:16px;">
-    <div class="section-label">Concept antwoord</div>
-    <div class="empty-box" id="compose-empty">
-      <div class="empty-icon">✍</div>
-      Vul een inkomende mail in<br>en tik op genereren
-    </div>
-    <div class="loading-box" id="compose-loading" style="display:none;">
-      <div class="dots"><span></span><span></span><span></span></div>
-      <div class="loading-label">Schrijven in jouw stijl...</div>
-    </div>
-    <textarea id="concept-reply" class="reply-area" rows="10" style="display:none;"></textarea>
-    <div class="btn-row" id="compose-actions" style="display:none;">
-      <button class="btn btn-warm" onclick="copyReply()" style="flex:1;">Kopiëren</button>
-      <button class="btn btn-ghost btn-sm" onclick="generateReply()">↻</button>
-      <button class="btn btn-ghost btn-sm" onclick="clearCompose()">✕</button>
-    </div>
-  </div>
-  <div class="disclaimer"><span style="color:var(--warm2);">!</span>MailMate verstuurt nooit zelf.</div>
+  <button class="sl-logout" onclick="doOut()">Uitloggen</button>
 </div>
 
-<!-- HISTORY -->
-<div class="screen" id="screen-history">
+<!-- MAIN WRAP -->
+<div class="main-wrap" id="main-wrap" style="display:none">
   <div class="topbar">
-    <div class="topbar-logo"><div class="topbar-mark">M</div>Geschiedenis</div>
-  </div>
-  <div id="history-list"></div>
-</div>
-
-<!-- CREDITS -->
-<div class="screen" id="screen-credits">
-  <div class="topbar">
-    <div class="topbar-logo"><div class="topbar-mark">M</div>Credits</div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Huidig saldo</div>
-    <div style="font-family:var(--font-serif);font-size:52px;font-weight:300;color:var(--warm2);line-height:1;margin-top:8px;" id="credits-big">—</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">credits resterend</div>
-  </div>
-
-  <div class="section-label">Bijkopen</div>
-  <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">1 concept = 1 credit &nbsp;·&nbsp; Agent trainen = 3 credits</div>
-
-  <div class="credit-grid">
-    <div class="credit-card" onclick="buyCreditsFake(50,'€9')">
-      <div><div class="credit-amount">50</div><div class="credit-info">€0.18 per concept</div></div>
-      <div class="credit-price">€9</div>
-    </div>
-    <div class="credit-card popular" onclick="buyCreditsFake(200,'€29')">
-      <div><div class="credit-amount">200</div><div class="credit-info">Meest gekozen · €0.145/concept</div></div>
-      <div class="credit-price">€29</div>
-    </div>
-    <div class="credit-card" onclick="buyCreditsFake(600,'€79')">
-      <div><div class="credit-amount">600</div><div class="credit-info">€0.13 per concept</div></div>
-      <div class="credit-price">€79</div>
+    <div class="tl-logo"><div class="lm">M</div>MailMate</div>
+    <div class="tl-right">
+      <div class="cr-pill" id="cr-pill" onclick="go('credits')">— berichten</div>
+      <div class="av" id="av" onclick="go('settings')">?</div>
     </div>
   </div>
-  <div style="font-size:11px;color:var(--muted);margin-top:12px;text-align:center;">Betalingen via Stripe · Geen abonnement</div>
-</div>
 
-<!-- ADMIN -->
-<div class="screen" id="screen-admin">
-  <div class="topbar">
-    <div class="topbar-logo"><div class="topbar-mark">M</div>Admin</div>
-  </div>
-
-  <div class="admin-indicator">⚙ Beheerdersmodus actief</div>
-
-  <div class="stat-row">
-    <div class="stat-card accent"><div class="stat-num" id="admin-users">142</div><div class="stat-label">Gebruikers</div></div>
-    <div class="stat-card"><div class="stat-num" id="admin-revenue">€1.840</div><div class="stat-label">Deze maand</div></div>
-  </div>
-  <div class="stat-row">
-    <div class="stat-card"><div class="stat-num">3.204</div><div class="stat-label">Credits verkocht</div></div>
-    <div class="stat-card"><div class="stat-num">€0.012</div><div class="stat-label">API kosten/concept</div></div>
-  </div>
-
-  <div class="section-label">Gebruikers</div>
-  <div id="admin-user-list">
-    <div class="admin-user-card">
-      <div class="admin-user-name">Jan de Vries</div>
-      <div class="admin-user-meta"><span>187 credits</span><span>24 concepten</span><span>Vandaag actief</span></div>
-      <div class="admin-actions">
-        <button class="btn btn-ghost btn-sm" onclick="adminAddCredits('Jan de Vries')">+ Credits</button>
-        <button class="btn btn-ghost btn-sm" onclick="toast('Berichtfunctie beschikbaar in productie')">Bericht</button>
+  <!-- COMPOSE -->
+  <div class="screen active sf" id="screen-compose">
+    <div class="carea">
+      <div class="ch"><h2>Concept schrijven</h2><p>Plak de e-mail waarop je wil antwoorden</p></div>
+      <div class="style-row" id="style-row"><button class="sb active" data-s="default" onclick="selStyle('default')">Standaard</button></div>
+      <div class="mail-box"><label>Inkomende e-mail</label><textarea id="mail-ta" placeholder="Plak hier de e-mail tekst..."></textarea></div>
+      <div class="opts-row">
+        <button class="ob" id="opt-ab" onclick="togOpt('ab')">Twee versies</button>
       </div>
-    </div>
-    <div class="admin-user-card">
-      <div class="admin-user-name">Sophie Meijer</div>
-      <div class="admin-user-meta"><span>43 credits</span><span>57 concepten</span><span>Gisteren actief</span></div>
-      <div class="admin-actions">
-        <button class="btn btn-ghost btn-sm" onclick="adminAddCredits('Sophie Meijer')">+ Credits</button>
-        <button class="btn btn-ghost btn-sm" onclick="toast('Berichtfunctie beschikbaar in productie')">Bericht</button>
-      </div>
-    </div>
-    <div class="admin-user-card">
-      <div class="admin-user-name">Thomas Bakker</div>
-      <div class="admin-user-meta"><span>198 credits</span><span>12 concepten</span><span>Ma actief</span></div>
-      <div class="admin-actions">
-        <button class="btn btn-ghost btn-sm" onclick="adminAddCredits('Thomas Bakker')">+ Credits</button>
-        <button class="btn btn-ghost btn-sm" onclick="toast('Berichtfunctie beschikbaar in productie')">Bericht</button>
+      <button class="btn-go" id="btn-go" onclick="doCompose()"><span id="go-lbl">Conceptantwoord schrijven</span><span>→</span></button>
+      <div id="res-area" style="display:none">
+        <div class="rcard" id="rcard">
+          <div class="rh"><span>Conceptantwoord</span><span class="sent-badge normaal" id="sent-badge">Normaal</span></div>
+          <div class="rbody" id="rbody"></div>
+          <div class="rsub" id="rsubrow" style="display:none"><strong>Onderwerpregel:</strong> <span id="rsubtxt"></span></div>
+          <div class="ract">
+            <button class="ra prim" id="btn-copy" onclick="doCopy()">Kopiëren</button>
+            <button class="ra" onclick="togRefine()">Aanpassen</button>
+            <button class="ra" onclick="doSaveTmpl()">Opslaan</button>
+            <button class="ra" onclick="doRewrite()">Opnieuw</button>
+          </div>
+          <div id="refine-row" style="display:none" class="refine-row">
+            <input class="ri" id="ri" placeholder="Bijv: maak korter, formeler...">
+            <button class="btn-rf" onclick="doRefine()">Aanpassen</button>
+          </div>
+        </div>
+        <div id="ab-res" style="display:none">
+          <div class="rcard"><div class="rh"><span>Formele versie</span></div><div class="rbody" id="ab-f"></div><div class="ract"><button class="ra prim" onclick="cpText('ab-f')">Kopiëren</button></div></div>
+          <div class="rcard" style="margin-top:8px"><div class="rh"><span>Informele versie</span></div><div class="rbody" id="ab-i"></div><div class="ract"><button class="ra prim" onclick="cpText('ab-i')">Kopiëren</button></div></div>
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="section-label" style="margin-top:20px;">API configuratie</div>
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:12px;">
-      <div>
-        <div style="font-size:12px;font-weight:500;">Anthropic API Key</div>
-        <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono);" id="admin-key-display">sk-ant-••••••••••••</div>
-      </div>
-      <span class="badge badge-green">Actief</span>
-    </div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;">
-      <span style="color:var(--muted);">API kosten deze maand</span>
-      <span style="color:var(--danger);font-family:var(--font-serif);font-size:16px;">€38.44</span>
+  <!-- HISTORY -->
+  <div class="screen sf" id="screen-history">
+    <div class="topbar" style="position:sticky;top:0"><div class="tl-logo"><div class="lm">M</div>Geschiedenis</div></div>
+    <div class="hlist" id="hlist"><div class="empty"><h3>Nog geen concepten</h3><p>Je concepten verschijnen hier.</p></div></div>
+  </div>
+
+  <!-- CLIENTS -->
+  <div class="screen sf" id="screen-clients">
+    <div class="topbar" style="position:sticky;top:0"><div class="tl-logo"><div class="lm">M</div>Klanten</div></div>
+    <div id="klist" style="padding:16px;display:flex;flex-direction:column;gap:8px"><div class="empty"><h3>Nog geen klanten</h3><p>Worden automatisch toegevoegd.</p></div></div>
+  </div>
+
+  <!-- KENNIS -->
+  <div class="screen sf" id="screen-kennis">
+    <div class="topbar" style="position:sticky;top:0"><div class="tl-logo"><div class="lm">M</div>Kennisbank</div></div>
+    <div class="karea">
+      <div class="kbox"><label>Eigen kennis</label><textarea id="kennis-ta" placeholder="Beschrijf je bedrijf, producten en diensten..."></textarea></div>
+      <button class="btn-save" id="btn-ks" onclick="saveKennis()">Opslaan</button>
     </div>
   </div>
+
+  <!-- WEBHOOK -->
+  <div class="screen sf" id="screen-webhook">
+    <div class="topbar" style="position:sticky;top:0"><div class="tl-logo"><div class="lm">M</div>Koppeling</div></div>
+    <div class="warea">
+      <div class="wcard">
+        <h3>Outlook en Gmail koppeling</h3>
+        <p>Via Zapier of Make koppel je MailMate aan je e-mailprogramma.</p>
+        <div style="font-size:10px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:7px">Webhook adres</div>
+        <div class="code" id="wh-url">Laden...</div>
+        <div style="font-size:10px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin:10px 0 7px">API sleutel</div>
+        <div class="code" id="wh-key">Laden...</div>
+        <button class="btn-save" style="margin-top:8px" onclick="cpWebhook()">Kopiëren</button>
+      </div>
+      <div class="wcard">
+        <h3>Stap voor stap</h3>
+        <div class="wstep"><div class="wn">1</div><div class="wt">Nieuwe Zap aanmaken in Zapier</div></div>
+        <div class="wstep"><div class="wn">2</div><div class="wt">Trigger: nieuwe e-mail in Outlook of Gmail</div></div>
+        <div class="wstep"><div class="wn">3</div><div class="wt">Actie: Webhooks by Zapier — POST</div></div>
+        <div class="wstep"><div class="wn">4</div><div class="wt">URL: jouw webhook adres hierboven</div></div>
+        <div class="wstep"><div class="wn">5</div><div class="wt">Header: x-api-key = jouw sleutel</div></div>
+        <div class="wstep"><div class="wn">6</div><div class="wt">Body: subject, from, body</div></div>
+      </div>
+      <button style="padding:10px;background:var(--cream);border:1px solid var(--border);font-size:12px;color:var(--muted);cursor:pointer;font-family:var(--sans)" onclick="resetKey()">Nieuwe sleutel aanmaken</button>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="screen sf" id="screen-settings">
+    <div class="topbar" style="position:sticky;top:0"><div class="tl-logo"><div class="lm">M</div>Instellingen</div></div>
+    <div class="slist">
+      <div class="stitle">Profiel</div>
+      <div class="sitem" onclick="editVak()"><div><h4>Vakgebied en doel</h4><p id="s-vak">Niet ingesteld</p></div><span class="sarr">›</span></div>
+      <div class="sitem" onclick="editToon()"><div><h4>Toon voorkeur</h4><p id="s-toon">Niet ingesteld</p></div><span class="sarr">›</span></div>
+      <div class="sitem" onclick="go('kennis')"><div><h4>Kennisbank</h4><p>Eigen kennis en documenten</p></div><span class="sarr">›</span></div>
+      <div class="stitle">Schrijfstijlen</div>
+      <div class="sitem" onclick="trainStyle()"><div><h4>Stijl trainen</h4><p>Stuur eigen mails in (3 berichten)</p></div><span class="sbadge">3 berichten</span><span class="sarr">›</span></div>
+      <div class="stitle">Berichten</div>
+      <div class="sitem" onclick="go('credits')"><div><h4>Berichten kopen</h4><p id="s-cr">— berichten resterend</p></div><span class="sarr">›</span></div>
+      <div class="stitle">Account</div>
+      <div class="sitem" onclick="doOut()"><div><h4 style="color:var(--red)">Uitloggen</h4><p id="s-email">—</p></div><span class="sarr">›</span></div>
+    </div>
+  </div>
+
+  <!-- CREDITS -->
+  <div class="screen sf" id="screen-credits">
+    <div class="topbar" style="position:sticky;top:0"><div class="tl-logo"><div class="lm">M</div>Berichten kopen</div></div>
+    <div class="clist">
+      <div style="background:var(--gold-pale);border:1px solid rgba(184,134,11,0.2);padding:16px;text-align:center">
+        <div style="font-family:var(--serif);font-size:36px;font-weight:300" id="cr-big">—</div>
+        <div style="font-size:13px;color:var(--muted)">berichten resterend</div>
+      </div>
+      <div class="cplan" onclick="buy(50,9)"><div><h4>Starter</h4><p>50 berichten · €0.18 per concept</p></div><div class="cprice">€9</div></div>
+      <div class="cplan feat" onclick="buy(200,29)" style="position:relative">
+        <div style="position:absolute;top:-1px;left:18px;background:var(--gold2);color:var(--ink);font-size:9px;font-weight:700;padding:3px 9px;letter-spacing:0.1em;text-transform:uppercase">Meest gekozen</div>
+        <div><h4>Pro</h4><p>200 berichten · €0.145 per concept</p></div><div class="cprice">€29</div>
+      </div>
+      <div class="cplan" onclick="buy(600,79)"><div><h4>Business</h4><p>600 berichten · €0.13 per concept</p></div><div class="cprice">€79</div></div>
+    </div>
+  </div>
+
+  <!-- BOTTOM NAV -->
+  <nav class="bnav">
+    <button class="ni active" id="nav-compose" onclick="go('compose')"><span class="ic">✍</span><span class="lb">Schrijven</span></button>
+    <button class="ni" id="nav-history" onclick="go('history')"><span class="ic">◷</span><span class="lb">Geschiedenis</span></button>
+    <button class="ni center" id="nav-kennis" onclick="go('kennis')"><span class="ic">📚</span><span class="lb">Kennis</span></button>
+    <button class="ni" id="nav-webhook" onclick="go('webhook')"><span class="ic">🔗</span><span class="lb">Koppeling</span></button>
+    <button class="ni" id="nav-settings" onclick="go('settings')"><span class="ic">⚙</span><span class="lb">Instellingen</span></button>
+  </nav>
 </div>
-
-<!-- BOTTOM NAV -->
-<nav class="bottom-nav">
-  <button class="nav-tab active" id="tab-dashboard" onclick="goTo('dashboard')">
-    <span class="nav-tab-icon">⊞</span>Home
-  </button>
-  <button class="nav-tab" id="tab-agent" onclick="goTo('agent')">
-    <span class="nav-tab-icon">◈</span>Agent
-  </button>
-  <button class="nav-tab" id="tab-compose" onclick="goTo('compose')">
-    <span class="nav-tab-icon">✍</span>Concept
-  </button>
-  <button class="nav-tab" id="tab-history" onclick="goTo('history')">
-    <span class="nav-tab-icon">◷</span>Historie
-  </button>
-  <button class="nav-tab" id="tab-credits" onclick="goTo('credits')">
-    <span class="nav-tab-icon">◆</span>Credits
-  </button>
-</nav>
-
-<div id="toast"></div>
 
 <script>
-// ════════════════════════════════
-// TELEGRAM WEB APP INIT
-// ════════════════════════════════
-const tg = window.Telegram?.WebApp;
-if (tg) {
-  tg.ready();
-  tg.expand();
-  tg.setHeaderColor('#18140f');
-  tg.setBackgroundColor('#f6f1e9');
-}
+const SUPA_URL = 'https://btavdgcncefwekiktuok.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0YXZkZ2NuY2Vmd2VraWt0dW9rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNTUzMzcsImV4cCI6MjA5MDgzMTMzN30.UuHhXyB67puxjJl0WzVc3PP-5xZRb4jjo2GGSxvMrVM';
+const API      = 'https://mm-main-production.up.railway.app';
+const CODE     = 'mailmate2025';
 
-const TG_USER = tg?.initDataUnsafe?.user || { first_name: 'Demo', id: 0 };
-const IS_ADMIN = (TG_USER.id === parseInt(window.ADMIN_ID || '0')) || window.location.search.includes('admin');
+const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+let user = null, prof = null, style = 'default', opts = {ab:false}, lastConcept = '', lastMail = '';
 
-// ════════════════════════════════
-// STATE
-// ════════════════════════════════
-let apiKey = window.ANTHROPIC_KEY || '';
-let styleProfile = sessionStorage.getItem('mm_profile') || '';
-let credits = parseInt(sessionStorage.getItem('mm_credits') || '50');
-let conceptCount = parseInt(sessionStorage.getItem('mm_concepts') || '0');
-let history = JSON.parse(sessionStorage.getItem('mm_history') || '[]');
-
-// ════════════════════════════════
-// NAVIGATION
-// ════════════════════════════════
-function goTo(screen) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-  document.getElementById('screen-' + screen).classList.add('active');
-  document.getElementById('tab-' + screen)?.classList.add('active');
-  updateCreditsUI();
-
-  if (screen === 'compose') refreshComposeState();
-  if (screen === 'history') renderHistory();
-  if (screen === 'dashboard') renderDashboard();
-  if (screen === 'agent' && styleProfile) showStoredProfile();
-
-  window.scrollTo(0, 0);
-}
-
-// ════════════════════════════════
 // INIT
-// ════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => {
-  updateCreditsUI();
-  renderDashboard();
+window.addEventListener('load', async () => {
+  if (window.Telegram?.WebApp) { Telegram.WebApp.ready(); Telegram.WebApp.expand(); }
+  setLdg('Sessie controleren...');
 
-  // Show admin tab if admin
-  if (IS_ADMIN) {
-    const nav = document.querySelector('.bottom-nav');
-    const adminTab = document.createElement('button');
-    adminTab.className = 'nav-tab';
-    adminTab.id = 'tab-admin';
-    adminTab.innerHTML = '<span class="nav-tab-icon">⚙</span>Admin';
-    adminTab.onclick = () => goTo('admin');
-    nav.appendChild(adminTab);
+  // Check magic link token in URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const token = urlParams.get('token');
+  if (token) {
+    // Valideer token via Supabase
+    const { data } = await sb.from('users').select('*').eq('login_token', token).single();
+    if (data && data.approved) {
+      // Token geldig - verwijder uit URL
+      window.history.replaceState({}, '', window.location.pathname);
+      prof = data;
+      // Verwijder token na gebruik
+      await sb.from('users').update({ login_token: null }).eq('id', data.id);
+      await initApp();
+      return;
+    }
   }
 
-  // Word counter for train textarea
-  document.getElementById('train-mails').addEventListener('input', function() {
-    const w = this.value.trim().split(/\s+/).filter(Boolean).length;
-    document.getElementById('train-counter').textContent = w + ' woorden';
-  });
+  // Check opgeslagen sessie
+  const savedKey = sessionStorage.getItem('mm_key');
+  if (savedKey) {
+    const { data } = await sb.from('users').select('*').eq('webhook_key', savedKey).single();
+    if (data && data.approved) {
+      prof = data;
+      await initApp();
+      return;
+    } else {
+      sessionStorage.removeItem('mm_key');
+    }
+  }
 
-  if (styleProfile) showStoredProfile();
+  hideLdg();
 });
 
-// ════════════════════════════════
-// DASHBOARD
-// ════════════════════════════════
-function renderDashboard() {
-  document.getElementById('dash-credits').textContent = credits;
-  document.getElementById('dash-concepts').textContent = conceptCount;
-
-  const agentSub = document.getElementById('dash-agent-sub');
-  if (styleProfile) {
-    document.getElementById('dash-agent-status').style.borderLeftColor = 'var(--sage)';
-    agentSub.innerHTML = '<span style="color:var(--sage);">✓ Actief</span> — klaar om concepten te schrijven';
-  } else {
-    agentSub.innerHTML = '<span style="color:var(--muted);">Nog niet getraind</span> — <button onclick="goTo(\'agent\')" style="background:none;border:none;color:var(--warm2);cursor:pointer;font-size:12px;text-decoration:underline;font-family:var(--font-mono);">Train nu →</button>';
-  }
-
-  const recentEl = document.getElementById('dash-recent');
-  if (history.length === 0) {
-    recentEl.innerHTML = '<div class="empty-box" style="min-height:80px;"><div class="empty-icon" style="font-size:18px;">◷</div>Nog geen concepten gegenereerd</div>';
-  } else {
-    recentEl.innerHTML = history.slice(0, 3).map(h => `
-      <div class="hist-item">
-        <div><div class="hist-subject">${h.subject}</div><div class="hist-meta">${h.time}</div></div>
-        <span class="badge badge-green">Klaar</span>
-      </div>`).join('');
-  }
+async function initApp() {
+  setLdg('Profiel laden...');
+  // Sla sessie op
+  if (prof && prof.webhook_key) sessionStorage.setItem('mm_key', prof.webhook_key);
+  document.getElementById('screen-auth').classList.remove('active');
+  document.getElementById('main-wrap').style.display = 'flex';
+  if (window.innerWidth >= 1024) document.getElementById('sidebar').classList.add('on');
+  hideLdg();
+  refreshUI();
+  loadHist(); loadClients();
 }
 
-// ════════════════════════════════
-// AGENT TRAINING
-// ════════════════════════════════
-function handleAgentDrop(e) {
-  e.preventDefault();
-  e.currentTarget.classList.remove('over');
-  readTrainFiles(Array.from(e.dataTransfer.files));
-}
-function handleAgentFiles(e) { readTrainFiles(Array.from(e.target.files)); }
-
-function readTrainFiles(files) {
-  let combined = '';
-  let done = 0;
-  files.forEach(f => {
-    const r = new FileReader();
-    r.onload = ev => {
-      combined += '\n\n——\n\n' + ev.target.result.slice(0, 2000);
-      done++;
-      if (done === files.length) {
-        document.getElementById('train-mails').value = combined.trim();
-        const w = combined.trim().split(/\s+/).filter(Boolean).length;
-        document.getElementById('train-counter').textContent = w + ' woorden';
-        document.getElementById('agent-drop').querySelector('.drop-title').textContent = `✓ ${files.length} bestand(en) geladen`;
-        document.getElementById('agent-drop').classList.add('loaded');
-        toast(files.length + ' bestand(en) ingeladen');
-      }
-    };
-    r.readAsText(f, 'utf-8');
-  });
+// AUTH TABS
+function swAuthTab(tab) {
+  document.getElementById('tab-login').style.display = tab === 'login' ? 'block' : 'none';
+  document.getElementById('tab-reg').style.display   = tab === 'reg'   ? 'block' : 'none';
+  document.getElementById('tab-btn-login').classList.toggle('active', tab === 'login');
+  document.getElementById('tab-btn-reg').classList.toggle('active', tab === 'reg');
 }
 
-async function trainAgent() {
-  const mails = document.getElementById('train-mails').value.trim();
-  if (mails.length < 80) { toast('Voeg meer mailtekst toe'); return; }
-  if (credits < 3) { toast('Onvoldoende credits'); goTo('credits'); return; }
-  if (!apiKey) { toast('Geen API key — contacteer beheerder'); return; }
-
-  const btn = document.getElementById('btn-train');
-  btn.disabled = true; btn.textContent = 'Trainen...';
-
-  try {
-    const res = await callClaude(`Analyseer de schrijfstijl van onderstaande e-mails en maak een compact stijlprofiel in max 200 woorden. Beschrijf: toon, je/u, aanhef, afsluiting, zinslengte, directheid, patronen.\n\nE-MAILS:\n${mails}`);
-    styleProfile = res;
-    sessionStorage.setItem('mm_profile', styleProfile);
-
-    credits -= 3;
-    saveState();
-    updateCreditsUI();
-    showStoredProfile();
-    toast('Agent getraind ✓ — 3 credits gebruikt');
-  } catch(e) { toast('Fout: ' + e.message); }
-
-  btn.disabled = false; btn.textContent = 'Agent trainen (3 credits) →';
+// INLOGGEN MET CODE
+async function doCodeLogin() {
+  const code = document.getElementById('login-code').value.trim();
+  const msg  = document.getElementById('login-msg');
+  if (!code) { msg.textContent = 'Vul je toegangscode in'; msg.className = 'auth-msg err'; return; }
+  msg.textContent = 'Controleren...'; msg.className = 'auth-msg';
+  setLdg('Toegang controleren...');
+  const { data } = await sb.from('users').select('*').eq('webhook_key', code).single();
+  if (data && data.approved) { prof = data; await initApp(); return; }
+  hideLdg();
+  msg.textContent = data && !data.approved ? 'Je account wacht nog op goedkeuring.' : 'Onjuiste toegangscode.';
+  msg.className = 'auth-msg err';
 }
 
-function showStoredProfile() {
-  document.getElementById('agent-profile-card').style.display = 'block';
-  document.getElementById('agent-profile-text').textContent = styleProfile.slice(0, 240) + (styleProfile.length > 240 ? '...' : '');
-  document.getElementById('agent-profile-empty').style.display = 'none';
-}
+// REGISTREREN
+async function doRegister() {
+  const naam   = document.getElementById('reg-naam').value.trim();
+  const email  = document.getElementById('reg-email').value.trim();
+  const beroep = document.getElementById('reg-beroep').value.trim();
+  const msg    = document.getElementById('reg-msg');
 
-// ════════════════════════════════
-// COMPOSE
-// ════════════════════════════════
-function refreshComposeState() {
-  const hasProfile = styleProfile.length > 0;
-  const strip = document.getElementById('compose-profile-strip');
-  const warn = document.getElementById('compose-no-agent');
-  if (hasProfile) {
-    strip.style.display = 'block';
-    document.getElementById('compose-profile-text').textContent = styleProfile.slice(0, 160) + '...';
-    warn.style.display = 'none';
-  } else {
-    strip.style.display = 'none';
-    warn.style.display = 'flex';
-  }
-}
+  if (!naam || !email) { msg.textContent = 'Vul naam en e-mailadres in'; msg.className = 'auth-msg err'; return; }
+  msg.textContent = 'Aanvraag indienen...'; msg.className = 'auth-msg';
+  setLdg('Aanvraag verwerken...');
 
-function handleComposeDrop(e) {
-  e.preventDefault();
-  e.currentTarget.classList.remove('over');
-  const file = e.dataTransfer.files[0];
-  if (file) readComposeFile(file);
-}
-function handleComposeFile(e) { if (e.target.files[0]) readComposeFile(e.target.files[0]); }
-
-function readComposeFile(file) {
-  const r = new FileReader();
-  r.onload = ev => {
-    document.getElementById('incoming-mail').value = parseEml(ev.target.result);
-    document.getElementById('compose-drop-title').textContent = '✓ ' + file.name;
-    document.getElementById('compose-drop').classList.add('loaded');
-    toast('Mail geladen: ' + file.name);
-  };
-  r.readAsText(file, 'utf-8');
-}
-
-function parseEml(raw) {
-  const from = (raw.match(/^From:\s*(.+)$/m) || [])[1] || '';
-  const subj = (raw.match(/^Subject:\s*(.+)$/m) || [])[1] || '';
-  const date = (raw.match(/^Date:\s*(.+)$/m) || [])[1] || '';
-  let body = '';
-  const he = raw.search(/\r?\n\r?\n/);
-  if (he > -1) {
-    body = raw.slice(he).trim()
-      .replace(/Content-[^\n]+\n/g, '')
-      .replace(/[A-Za-z0-9+/]{60,}={0,2}/g, '')
-      .replace(/=\r?\n/g, '')
-      .replace(/=[0-9A-F]{2}/g, m => String.fromCharCode(parseInt(m.slice(1), 16)))
-      .replace(/<[^>]+>/g, '')
-      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
-      .replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-  }
-  return [from && `Van: ${from}`, date && `Datum: ${date}`, subj && `Onderwerp: ${subj}`, body].filter(Boolean).join('\n').trim() || raw.slice(0, 1600);
-}
-
-async function generateReply() {
-  const incoming = document.getElementById('incoming-mail').value.trim();
-  if (!incoming) { toast('Vul een inkomende mail in'); return; }
-  if (!styleProfile) { toast('Train eerst je agent'); goTo('agent'); return; }
-  if (credits < 1) { toast('Onvoldoende credits'); goTo('credits'); return; }
-  if (!apiKey) { toast('Geen API key — contacteer beheerder'); return; }
-
-  const btn = document.getElementById('btn-generate');
-  btn.disabled = true; btn.textContent = 'Genereren...';
-
-  document.getElementById('compose-empty').style.display = 'none';
-  document.getElementById('concept-reply').style.display = 'none';
-  document.getElementById('compose-actions').style.display = 'none';
-  document.getElementById('compose-loading').style.display = 'flex';
-
-  try {
-    const system = `Je bent een e-mail assistent die antwoorden schrijft PRECIES in de schrijfstijl van de gebruiker.\n\nSCHRIJFSTIJL PROFIEL:\n${styleProfile}\n\nREGELS:\n- Schrijf in dezelfde stijl, toon en structuur\n- Gebruik dezelfde aanhef en afsluiting\n- Geen uitleg — alleen het conceptantwoord`;
-    const reply = await callClaude(`Schrijf een conceptantwoord op deze inkomende mail:\n\n${incoming}`, system);
-
-    document.getElementById('concept-reply').value = reply;
-    document.getElementById('compose-loading').style.display = 'none';
-    document.getElementById('concept-reply').style.display = 'block';
-    document.getElementById('compose-actions').style.display = 'flex';
-
-    credits -= 1;
-    conceptCount += 1;
-
-    const subj = (incoming.match(/Onderwerp:\s*(.+)/) || ['', 'Onbekend onderwerp'])[1];
-    history.unshift({ subject: subj, time: new Date().toLocaleString('nl-NL', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) });
-    if (history.length > 20) history.pop();
-
-    saveState();
-    updateCreditsUI();
-
-    // Telegram haptic feedback
-    tg?.HapticFeedback?.notificationOccurred('success');
-
-  } catch(e) {
-    document.getElementById('compose-loading').style.display = 'none';
-    document.getElementById('compose-empty').style.display = 'flex';
-    toast('Fout: ' + e.message);
-  }
-
-  btn.disabled = false; btn.textContent = 'Concept genereren (1 credit) →';
-}
-
-function copyReply() {
-  const text = document.getElementById('concept-reply').value;
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(text).then(() => toast('Gekopieerd ✓'));
-  } else {
-    document.getElementById('concept-reply').select();
-    document.execCommand('copy');
-    toast('Gekopieerd ✓');
-  }
-  tg?.HapticFeedback?.impactOccurred('light');
-}
-
-function clearCompose() {
-  document.getElementById('incoming-mail').value = '';
-  document.getElementById('concept-reply').value = '';
-  document.getElementById('concept-reply').style.display = 'none';
-  document.getElementById('compose-actions').style.display = 'none';
-  document.getElementById('compose-loading').style.display = 'none';
-  document.getElementById('compose-empty').style.display = 'flex';
-  document.getElementById('compose-drop-title').textContent = 'Sleep .eml vanuit Outlook';
-  document.getElementById('compose-drop').classList.remove('loaded');
-  document.getElementById('compose-file').value = '';
-}
-
-// ════════════════════════════════
-// HISTORY
-// ════════════════════════════════
-function renderHistory() {
-  const el = document.getElementById('history-list');
-  if (history.length === 0) {
-    el.innerHTML = '<div class="empty-box"><div class="empty-icon">◷</div>Nog geen concepten gegenereerd</div>';
+  // Check of e-mail al bestaat
+  const { data: existing } = await sb.from('users').select('id').eq('email', email).single();
+  if (existing) {
+    hideLdg();
+    msg.textContent = 'Dit e-mailadres is al geregistreerd. Gebruik de inlogknop.';
+    msg.className = 'auth-msg err';
+    swAuthTab('login');
     return;
   }
-  el.innerHTML = history.map(h => `
-    <div class="hist-item">
-      <div><div class="hist-subject">${h.subject}</div><div class="hist-meta">${h.time}</div></div>
-      <span class="badge badge-green">Klaar</span>
-    </div>`).join('');
+
+  // Nieuw profiel aanmaken
+  const webhookKey = 'mm_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  const { error } = await sb.from('users').insert({
+    telegram_id: 0,
+    name: naam,
+    email: email,
+    credits: 0,
+    concept_count: 0,
+    style_profiles: JSON.stringify({ default: '' }),
+    active_style: 'default',
+    user_knowledge: '',
+    onboarded: false,
+    approved: false,
+    vakgebied: beroep || '',
+    doel: '',
+    toon_voorkeur: '',
+    webhook_key: webhookKey
+  });
+
+  if (error) {
+    hideLdg();
+    msg.textContent = 'Fout: ' + (error.message || JSON.stringify(error));
+    msg.className = 'auth-msg err';
+    return;
+  }
+
+  // Notificeer admin via Railway
+  try {
+    await fetch(API + '/api/notify-admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ naam, email, beroep })
+    });
+  } catch(e) { /* stil falen */ }
+
+  hideLdg();
+  msg.textContent = 'Aanvraag ingediend! Je ontvangt een e-mail zodra je toegang hebt. Dit duurt maximaal 1 werkdag.';
+  msg.className = 'auth-msg ok';
 }
 
-// ════════════════════════════════
+function doOut() {
+  sessionStorage.removeItem('mm_key');
+  prof = null;
+  document.getElementById('main-wrap').style.display = 'none';
+  document.getElementById('sidebar').classList.remove('on');
+  document.getElementById('screen-auth').classList.add('active');
+  go('compose');
+}
+
+function refreshUI() {
+  if (!prof) return;
+  const cr = prof.credits || 0;
+  document.getElementById('cr-pill').textContent = cr + ' berichten';
+  document.getElementById('cr-big').textContent = cr;
+  if (document.getElementById('sb-cr')) document.getElementById('sb-cr').textContent = cr;
+  document.getElementById('av').textContent = (prof.name||user?.email||'U').charAt(0).toUpperCase();
+  document.getElementById('s-email').textContent = prof?.name || '—';
+  document.getElementById('s-vak').textContent = prof.vakgebied||'Niet ingesteld';
+  document.getElementById('s-toon').textContent = prof.toon_voorkeur||'Niet ingesteld';
+  document.getElementById('s-cr').textContent = cr + ' berichten resterend';
+  if (document.getElementById('kennis-ta')) document.getElementById('kennis-ta').value = prof.user_knowledge||'';
+  // Styles
+  const styles = Object.keys(JSON.parse(prof.style_profiles||'{"default":""}'));
+  document.getElementById('style-row').innerHTML = styles.map(n => `<button class="sb${n===style?' active':''}" data-s="${n}" onclick="selStyle('${n}')">${n}</button>`).join('');
+  // Webhook
+  const wu = API + '/mailhook/' + (prof.telegram_id||0);
+  if (document.getElementById('wh-url')) { document.getElementById('wh-url').innerHTML = `<span class="hl">${wu}</span>`; document.getElementById('wh-key').innerHTML = `<span class="hl">${prof.webhook_key||'—'}</span>`; }
+}
+
+
+
+// COMPOSE
+function selStyle(n) { style=n; document.querySelectorAll('.sb').forEach(b => b.classList.toggle('active', b.dataset.s===n)); }
+function togOpt(k) { opts[k]=!opts[k]; document.getElementById('opt-'+k).classList.toggle('active',opts[k]); }
+async function doCompose() {
+  const txt = document.getElementById('mail-ta').value.trim();
+  if (txt.length<15) { toast('E-mail tekst te kort'); return; }
+  if (!prof||prof.credits<1) { toast('Geen berichten meer'); go('credits'); return; }
+  const btn = document.getElementById('btn-go'); btn.disabled=true; document.getElementById('go-lbl').textContent='Schrijven...';
+  try {
+    const r = await fetch(API+(opts.ab?'/api/compose-ab':'/api/compose'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ telegram_id:prof.telegram_id||0, api_key:prof.webhook_key, mail_text:txt, style }) });
+    if (!r.ok) throw new Error('Server niet beschikbaar');
+    const d = await r.json();
+    lastMail = txt;
+    if (opts.ab&&d.formal) {
+      document.getElementById('res-area').style.display='block';
+      document.getElementById('rcard').style.display='none';
+      document.getElementById('ab-res').style.display='block';
+      document.getElementById('ab-f').textContent=d.formal;
+      document.getElementById('ab-i').textContent=d.informal;
+    } else {
+      lastConcept=d.concept;
+      document.getElementById('res-area').style.display='block';
+      document.getElementById('rcard').style.display='block';
+      document.getElementById('ab-res').style.display='none';
+      document.getElementById('rbody').textContent=d.concept;
+      if (d.subject_line) { document.getElementById('rsubrow').style.display='block'; document.getElementById('rsubtxt').textContent=d.subject_line; }
+      const sent=(d.sentiment||'normaal').toLowerCase();
+      const sb=document.getElementById('sent-badge'); sb.textContent=sent.charAt(0).toUpperCase()+sent.slice(1); sb.className='sent-badge '+sent;
+    }
+    prof.credits -= opts.ab?2:1; prof.concept_count=(prof.concept_count||0)+1; refreshUI();
+    document.getElementById('res-area').scrollIntoView({behavior:'smooth',block:'start'});
+  } catch(e) { toast('Fout: '+e.message); }
+  btn.disabled=false; document.getElementById('go-lbl').textContent='Conceptantwoord schrijven';
+}
+async function doRefine() {
+  const ins=document.getElementById('ri').value.trim(); if (!ins||!lastConcept) return;
+  const btn=document.querySelector('.btn-rf'); btn.textContent='...'; btn.disabled=true;
+  try {
+    const r=await fetch(API+'/api/refine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telegram_id:prof.telegram_id||0,api_key:prof.webhook_key,concept:lastConcept,instruction:ins})});
+    const d=await r.json();
+    if (d.refined) { lastConcept=d.refined; document.getElementById('rbody').textContent=d.refined; document.getElementById('ri').value=''; toast('Aangepast!'); }
+  } catch(e) { toast('Fout'); }
+  btn.textContent='Aanpassen'; btn.disabled=false;
+}
+function doRewrite() { if (!lastMail) return; document.getElementById('mail-ta').value=lastMail; document.getElementById('res-area').style.display='none'; doCompose(); }
+function togRefine() { const r=document.getElementById('refine-row'); r.style.display=r.style.display==='none'?'flex':'none'; if(r.style.display==='flex') document.getElementById('ri').focus(); }
+function doCopy() { cpText('rbody'); }
+function cpText(id) { navigator.clipboard.writeText(document.getElementById(id).textContent).then(()=>{ toast('Gekopieerd!'); const b=document.getElementById('btn-copy'); if(b){b.classList.add('done');b.textContent='Gekopieerd!';setTimeout(()=>{b.classList.remove('done');b.textContent='Kopiëren';},2000);} }); }
+function doSaveTmpl() {
+  if (!lastConcept) return;
+  showMod(`<h3>Opslaan als antwoord</h3><p style="font-size:13px;color:var(--muted);margin-bottom:14px">Geef een naam:</p><input id="tn" style="width:100%;padding:11px;border:1px solid var(--border);font-family:var(--sans);font-size:14px;background:var(--cream);margin-bottom:12px" placeholder="Bijv: Standaard offerte antwoord"><button class="btn-go" onclick="saveTmpl()">Opslaan →</button>`);
+}
+async function saveTmpl() {
+  const n=document.getElementById('tn').value.trim(); if (!n) return;
+  await sb.from('templates').insert({telegram_id:prof.telegram_id||0,name:n,content:lastConcept,created_at:new Date().toISOString()});
+  closeMod(); toast('"'+n+'" opgeslagen!');
+}
+
+// HISTORY
+async function loadHist() {
+  const { data } = await sb.from('history').select('*').eq('telegram_id',prof?.telegram_id||0).order('created_at',{ascending:false}).limit(20);
+  const el=document.getElementById('hlist');
+  if (!data?.length) { el.innerHTML='<div class="empty"><h3>Nog geen concepten</h3><p>Je concepten verschijnen hier.</p></div>'; return; }
+  el.innerHTML=data.map(h=>`<div class="hitem" onclick="loadHist_('${encodeURIComponent(h.concept||'')}')"><div class="hsubj">${h.subject||'Zonder onderwerp'}</div><div class="hprev">${(h.concept||'').slice(0,100)}</div><div class="hdate">${new Date(h.created_at).toLocaleDateString('nl-NL',{day:'numeric',month:'long',year:'numeric'})}</div></div>`).join('');
+}
+function loadHist_(enc) { lastConcept=decodeURIComponent(enc); document.getElementById('rbody').textContent=lastConcept; document.getElementById('res-area').style.display='block'; document.getElementById('rcard').style.display='block'; document.getElementById('ab-res').style.display='none'; go('compose'); }
+
+// CLIENTS
+async function loadClients() {
+  const { data } = await sb.from('clients').select('*').eq('telegram_id',prof?.telegram_id||0).order('last_contact',{ascending:false}).limit(30);
+  const el=document.getElementById('klist');
+  if (!data?.length) { el.innerHTML='<div class="empty"><h3>Nog geen klanten</h3><p>Worden automatisch toegevoegd.</p></div>'; return; }
+  el.innerHTML=data.map(c=>`<div style="background:var(--white);border:1px solid var(--border);padding:13px 14px;display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:500">${c.email}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${c.last_subject||'—'} · ${new Date(c.last_contact).toLocaleDateString('nl-NL')}</div></div><div style="background:var(--cream);padding:3px 9px;font-size:11px;color:var(--muted)">${c.contact_count}×</div></div>`).join('');
+}
+
+// KENNIS
+async function saveKennis() {
+  const t=document.getElementById('kennis-ta').value; const btn=document.getElementById('btn-ks');
+  btn.textContent='Opslaan...';
+  await sb.from('users').update({user_knowledge:t,updated_at:new Date().toISOString()}).eq('webhook_key', prof.webhook_key);
+  if (prof) prof.user_knowledge=t;
+  btn.textContent='Opgeslagen!'; btn.classList.add('saved'); setTimeout(()=>{btn.textContent='Opslaan';btn.classList.remove('saved');},2000);
+}
+
+// WEBHOOK
+function cpWebhook() { const u=API+'/mailhook/'+(prof?.telegram_id||0); navigator.clipboard.writeText('URL: '+u+'\nSleutel: '+(prof?.webhook_key||'')).then(()=>toast('Gekopieerd!')); }
+async function resetKey() { const k='wk_'+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2); await sb.from('users').update({webhook_key:k,updated_at:new Date().toISOString()}).eq('webhook_key', prof.webhook_key); if(prof)prof.webhook_key=k; refreshUI(); toast('Nieuwe sleutel aangemaakt!'); }
+
+// SETTINGS
+function editVak() {
+  showMod(`<h3>Vakgebied en doel</h3><p style="font-size:13px;color:var(--muted);margin:6px 0 14px">Beschrijf wat jij doet</p><div style="margin-bottom:10px"><label style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px">Vakgebied</label><input id="mv" value="${prof?.vakgebied||''}" placeholder="Bijv: Assurantiekantoor" style="width:100%;padding:11px;border:1px solid var(--border);font-family:var(--sans);font-size:14px;background:var(--cream)"></div><div style="margin-bottom:14px"><label style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px">Doel</label><input id="md" value="${prof?.doel||''}" placeholder="Bijv: Klantadvies en polisbeheer" style="width:100%;padding:11px;border:1px solid var(--border);font-family:var(--sans);font-size:14px;background:var(--cream)"></div><button class="btn-go" onclick="saveVak()">Opslaan →</button>`);
+}
+async function saveVak() { const v=document.getElementById('mv').value.trim(),d=document.getElementById('md').value.trim(); await sb.from('users').update({vakgebied:v,doel:d,updated_at:new Date().toISOString()}).eq('webhook_key', prof.webhook_key); if(prof){prof.vakgebied=v;prof.doel=d;} refreshUI(); closeMod(); toast('Opgeslagen!'); }
+function editToon() {
+  showMod(`<h3>Toon voorkeur</h3><p style="font-size:13px;color:var(--muted);margin:6px 0 14px">Hoe schrijf jij normaal?</p>${['Formeel (u)','Informeel (je)','Mix — hangt af van klant'].map(t=>`<div onclick="saveToon('${t}')" style="padding:13px;border:1px solid var(--border);margin-bottom:7px;cursor:pointer;background:${prof?.toon_voorkeur===t?'var(--gold-pale)':'var(--white)'};display:flex;justify-content:space-between"><span style="font-size:14px;font-weight:500">${t}</span>${prof?.toon_voorkeur===t?'<span style="color:var(--gold)">✓</span>':''}</div>`).join('')}`);
+}
+async function saveToon(t) { await sb.from('users').update({toon_voorkeur:t,updated_at:new Date().toISOString()}).eq('webhook_key', prof.webhook_key); if(prof)prof.toon_voorkeur=t; refreshUI(); closeMod(); toast('Opgeslagen: '+t); }
+function trainStyle() {
+  if (!prof||prof.credits<3) { toast('Minimaal 3 berichten nodig'); return; }
+  showMod(`<h3>Stijl trainen</h3><p style="font-size:13px;color:var(--muted);margin:6px 0 14px">Stuur 5+ eigen mails in, gescheiden door ——</p><input id="sn" placeholder="Naam voor stijl (bijv: formeel)" style="width:100%;padding:11px;border:1px solid var(--border);font-family:var(--sans);font-size:14px;background:var(--cream);margin-bottom:8px"><textarea id="sm" placeholder="E-mail 1...&#10;——&#10;E-mail 2..." style="width:100%;padding:12px;border:1px solid var(--border);font-family:var(--sans);font-size:13px;min-height:140px;resize:none;background:var(--cream);margin-bottom:12px"></textarea><div style="font-size:12px;color:var(--muted);margin-bottom:10px">Kost 3 berichten · Saldo: ${prof.credits}</div><button class="btn-go" id="btn-tr" onclick="doTrain()">Stijl trainen →</button>`);
+}
+async function doTrain() {
+  const n=document.getElementById('sn').value.trim()||'default', m=document.getElementById('sm').value.trim();
+  if (m.length<100) { toast('Stuur meer mails in'); return; }
+  const btn=document.getElementById('btn-tr'); btn.textContent='Analyseren...'; btn.disabled=true;
+  try {
+    const r=await fetch(API+'/api/train-style',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({telegram_id:prof.telegram_id||0,api_key:prof.webhook_key,name:n,mails:m})});
+    const d=await r.json();
+    if (d.success) { if(prof){prof.credits-=3;const p=JSON.parse(prof.style_profiles||'{}');p[n]=d.profile;prof.style_profiles=JSON.stringify(p);} refreshUI(); closeMod(); toast('Stijl "'+n+'" getraind!'); }
+    else toast('Fout: '+(d.error||'onbekend'));
+  } catch(e) { toast('Fout: '+e.message); }
+  btn.textContent='Stijl trainen →'; btn.disabled=false;
+}
+
 // CREDITS
-// ════════════════════════════════
-function buyCreditsFake(amount, price) {
-  toast(`${price} betaling gestart — (demo) ${amount} credits toegevoegd`);
-  credits += amount;
-  saveState();
-  updateCreditsUI();
-  tg?.HapticFeedback?.notificationOccurred('success');
+function buy(amount,price) { toast('Betaling komt binnenkort. Neem contact op.'); }
+
+// NAV
+function go(name) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.ni,.sl-item').forEach(n=>n.classList.remove('active'));
+  const scr=document.getElementById('screen-'+name); if(scr){scr.classList.add('active','sf');setTimeout(()=>scr.classList.remove('sf'),300);}
+  const ni=document.getElementById('nav-'+name); if(ni) ni.classList.add('active');
+  const sl=document.getElementById('sb-'+name); if(sl) sl.classList.add('active');
+  if (name==='history') loadHist();
+  if (name==='clients') loadClients();
+  if (name==='kennis'&&prof) document.getElementById('kennis-ta').value=prof.user_knowledge||'';
 }
 
-function updateCreditsUI() {
-  ['top-credits', 'agent-top-credits', 'compose-top-credits', 'dash-credits', 'credits-big'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = credits;
-  });
-}
+// HELPERS
+function setLdg(t) { document.getElementById('ldg-s').textContent=t; document.getElementById('ldg').classList.add('show'); }
+function hideLdg() { document.getElementById('ldg').classList.remove('show'); }
+function toast(m) { const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function showMod(h) { document.getElementById('mbody').innerHTML=h; document.getElementById('moverlay').classList.add('show'); }
+function closeMod() { document.getElementById('moverlay').classList.remove('show'); }
 
-// ════════════════════════════════
-// ADMIN
-// ════════════════════════════════
-function adminAddCredits(name) {
-  toast(`Credits toegevoegd aan ${name} ✓`);
-  tg?.HapticFeedback?.impactOccurred('medium');
-}
+// Enter key op toegangscode veld
+document.getElementById('login-code').addEventListener('keydown', e => { if(e.key==='Enter') doCodeLogin(); });
+document.getElementById('reg-email').addEventListener('keydown', e => { if(e.key==='Enter') doRegister(); });
 
-// ════════════════════════════════
-// STATE PERSISTENCE
-// ════════════════════════════════
-function saveState() {
-  sessionStorage.setItem('mm_credits', credits);
-  sessionStorage.setItem('mm_concepts', conceptCount);
-  sessionStorage.setItem('mm_history', JSON.stringify(history));
-}
-
-// ════════════════════════════════
-// API CALL
-// ════════════════════════════════
-async function callClaude(userMsg, systemMsg = '') {
-  const body = {
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1000,
-    messages: [{ role: 'user', content: userMsg }]
-  };
-  if (systemMsg) body.system = systemMsg;
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
-    body: JSON.stringify(body)
-  });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message);
-  return data.content?.map(b => b.text || '').join('') || '';
-}
-
-// ════════════════════════════════
-// TOAST
-// ════════════════════════════════
-function toast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2400);
-}
+// Desktop resize
+window.addEventListener('resize',()=>{ const d=window.innerWidth>=1024; if(prof) document.getElementById('sidebar').classList.toggle('on',d); });
 </script>
 </body>
 </html>
