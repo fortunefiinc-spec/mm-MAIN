@@ -1,4 +1,4 @@
-// MailMate Bot v4.1 — Whitelist + Rate limiting + Toegangsbeveiliging
+// MailMate Bot v4.1 -- Whitelist + Rate limiting + Toegangsbeveiliging
 require('dotenv').config();
 const TelegramBot      = require('node-telegram-bot-api');
 const Anthropic        = require('@anthropic-ai/sdk');
@@ -33,7 +33,7 @@ else { console.log('Stripe demo modus'); }
 // Express
 const app = express();
 
-// CORS — laat webapp op app.mailmate.nl de API gebruiken
+// CORS -- laat webapp op app.mailmate.nl de API gebruiken
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -101,8 +101,8 @@ app.post('/mailhook/:userId', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Externe API — webapp endpoints
-// POST /api/compose-ab — A/B versies
+// Externe API -- webapp endpoints
+// POST /api/compose-ab -- A/B versies
 app.post('/api/compose-ab', async (req, res) => {
   const { telegram_id, api_key, mail_text, style } = req.body;
   const user = await getUser(parseInt(telegram_id)||0, '');
@@ -120,7 +120,7 @@ app.post('/api/compose-ab', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/refine — concept verfijnen
+// POST /api/refine -- concept verfijnen
 app.post('/api/refine', async (req, res) => {
   const { telegram_id, api_key, concept, instruction } = req.body;
   const user = await getUser(parseInt(telegram_id)||0, '');
@@ -135,7 +135,7 @@ app.post('/api/refine', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/train-style — stijl trainen via webapp
+// POST /api/train-style -- stijl trainen via webapp
 app.post('/api/train-style', async (req, res) => {
   const { telegram_id, api_key, name, mails } = req.body;
   const user = await getUser(parseInt(telegram_id)||0, '');
@@ -174,9 +174,9 @@ app.listen(PORT, '0.0.0.0', () => {
   }
 });
 
-// ════════════════════════════════════════════════════
+// ====================================================
 // BEVEILIGING
-// ════════════════════════════════════════════════════
+// ====================================================
 
 // Rate limiting in geheugen
 const rateLimits = new Map(); // userId -> { count, resetAt }
@@ -206,9 +206,9 @@ async function isApproved(telegramId) {
   return user && user.approved === true;
 }
 
-// ════════════════════════════════════════════════════
+// ====================================================
 // SUPABASE
-// ════════════════════════════════════════════════════
+// ====================================================
 function generateApiKey() { return 'mm_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2); }
 
 function fallbackUser(telegramId, name) {
@@ -316,9 +316,9 @@ async function scheduleFollowUp(telegramId, subject) {
   await supabase.from('followups').insert({ telegram_id: telegramId, subject, remind_at: new Date(Date.now() + 7*24*60*60*1000).toISOString(), sent: false });
 }
 
-// ════════════════════════════════════════════════════
+// ====================================================
 // AI
-// ════════════════════════════════════════════════════
+// ====================================================
 async function analyzeMail(mailText) {
   try {
     const result = await callClaude(
@@ -379,18 +379,18 @@ async function createStripeCheckout(telegramId, credits, priceEur) {
   return session.url;
 }
 
-// ════════════════════════════════════════════════════
+// ====================================================
 // SESSION
-// ════════════════════════════════════════════════════
+// ====================================================
 const sessionState = new Map();
 function getState(id) {
   if (!sessionState.has(id)) sessionState.set(id, { step: 'idle', lastConcept: '', lastIncoming: '', activeStyle: 'default', trainStyleName: null });
   return sessionState.get(id);
 }
 
-// ════════════════════════════════════════════════════
+// ====================================================
 // KEYBOARDS
-// ════════════════════════════════════════════════════
+// ====================================================
 const isAdmin = (id) => id === ADMIN_ID;
 
 function mainKeyboard(userId) {
@@ -417,9 +417,9 @@ function creditsKeyboard() {
   ]};
 }
 
-// ════════════════════════════════════════════════════
+// ====================================================
 // ONBOARDING
-// ════════════════════════════════════════════════════
+// ====================================================
 async function startOnboarding(userId, firstName) {
   await bot.sendMessage(userId,
     '*Welkom bij MailMate, ' + firstName + '!*\n\nIk ben jouw persoonlijke e-mail assistent. Ik leer hoe jij schrijft en zet automatisch conceptantwoorden klaar.\n\n*Stap 1 van 4*\n\nIn welk vakgebied werk je en wat doe je?\n\nBijvoorbeeld:\n- Assurantiekantoor - klantadvies\n- Bouwbedrijf - offertes en projecten\n- Webshop - klantenservice\n\n_Tik /skip als je dit later wil invullen._',
@@ -434,7 +434,7 @@ bot.onText(/\/skip/, async (msg) => {
   if (s.step === 'onboard_vakgebied') {
     await saveUser(id, { vakgebied: 'Algemeen' });
     s.step = 'onboard_toon';
-    bot.sendMessage(id, '*Stap 2 van 4 — Toon*\n\nHoe schrijf jij normaal?',
+    bot.sendMessage(id, '*Stap 2 van 4 -- Toon*\n\nHoe schrijf jij normaal?',
       { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
         [{ text: 'Formeel (u)', callback_data: 'toon_formeel' }],
         [{ text: 'Informeel (je)', callback_data: 'toon_informeel' }],
@@ -443,7 +443,7 @@ bot.onText(/\/skip/, async (msg) => {
     );
   } else if (s.step === 'onboard_style') {
     s.step = 'onboard_knowledge';
-    bot.sendMessage(id, '*Stap 4 van 4 — Eigen kennis*\n\nVoeg informatie toe die ik moet weten over jouw bedrijf, producten of diensten. Of tik /skip.', { parse_mode: 'Markdown' });
+    bot.sendMessage(id, '*Stap 4 van 4 -- Eigen kennis*\n\nVoeg informatie toe die ik moet weten over jouw bedrijf, producten of diensten. Of tik /skip.', { parse_mode: 'Markdown' });
   } else if (s.step === 'onboard_knowledge') {
     await saveUser(id, { onboarded: true });
     s.step = 'idle';
@@ -451,9 +451,9 @@ bot.onText(/\/skip/, async (msg) => {
   }
 });
 
-// ════════════════════════════════════════════════════
-// /START — MET TOEGANGSCONTROLE
-// ════════════════════════════════════════════════════
+// ====================================================
+// /START -- MET TOEGANGSCONTROLE
+// ====================================================
 bot.onText(/\/start/, async (msg) => {
   const { id, first_name } = msg.from;
 
@@ -479,7 +479,7 @@ bot.onText(/\/start/, async (msg) => {
     return;
   }
 
-  // Nieuwe gebruiker — vraag toegangscode
+  // Nieuwe gebruiker -- vraag toegangscode
   getState(id).step = 'awaiting_access_code';
   bot.sendMessage(id,
     '*Welkom bij MailMate*\n\nVoer de toegangscode in om te starten.\n\n_Geen toegangscode? Neem contact op via de website._',
@@ -487,9 +487,9 @@ bot.onText(/\/start/, async (msg) => {
   );
 });
 
-// ════════════════════════════════════════════════════
+// ====================================================
 // CALLBACKS
-// ════════════════════════════════════════════════════
+// ====================================================
 bot.on('callback_query', async (query) => {
   const { id: userId, first_name } = query.from;
   const data = query.data;
@@ -512,7 +512,7 @@ bot.on('callback_query', async (query) => {
     const map = { toon_formeel: 'Formeel', toon_informeel: 'Informeel', toon_mix: 'Mix' };
     await saveUser(userId, { toon_voorkeur: map[data]||'Professioneel' });
     s.step = 'onboard_style';
-    bot.sendMessage(userId, '*Stap 3 van 4 — Schrijfstijl*\n\nStuur 5 of meer e-mails die jij zelf hebt geschreven. Ik leer hieruit precies hoe jij schrijft.\n\nScheid de mails met: ——\n\n_Tik /skip als je dit later wil doen._', { parse_mode: 'Markdown' });
+    bot.sendMessage(userId, '*Stap 3 van 4 -- Schrijfstijl*\n\nStuur 5 of meer e-mails die jij zelf hebt geschreven. Ik leer hieruit precies hoe jij schrijft.\n\nScheid de mails met: ----\n\n_Tik /skip als je dit later wil doen._', { parse_mode: 'Markdown' });
     return;
   }
 
@@ -549,7 +549,7 @@ bot.on('callback_query', async (query) => {
   else if (data === 'batch') {
     if (user.credits < 1) return bot.sendMessage(userId, 'Geen berichten meer.', { reply_markup: creditsKeyboard() });
     s.step = 'awaiting_batch';
-    bot.sendMessage(userId, '*Meerdere mails verwerken*\n\nPlak meerdere e-mails in één bericht. Zet tussen elke mail:\n`===MAIL===`\n\n_Per e-mail wordt 1 bericht gebruikt._', { parse_mode: 'Markdown' });
+    bot.sendMessage(userId, '*Meerdere mails verwerken*\n\nPlak meerdere e-mails in ??n bericht. Zet tussen elke mail:\n`===MAIL===`\n\n_Per e-mail wordt 1 bericht gebruikt._', { parse_mode: 'Markdown' });
   }
 
   // A/B VERSIES
@@ -649,12 +649,12 @@ bot.on('callback_query', async (query) => {
   else if (data.startsWith('train_existing_')) {
     s.trainStyleName = data.replace('train_existing_', '');
     s.step = 'awaiting_train';
-    bot.sendMessage(userId, '*"' + s.trainStyleName + '" opnieuw trainen*\n\nStuur 5+ e-mails die jij hebt geschreven. Scheid ze met ——', { parse_mode: 'Markdown' });
+    bot.sendMessage(userId, '*"' + s.trainStyleName + '" opnieuw trainen*\n\nStuur 5+ e-mails die jij hebt geschreven. Scheid ze met ----', { parse_mode: 'Markdown' });
   }
 
   // KENNISBANK
   else if (data === 'myknow') {
-    bot.sendMessage(userId, '*Kennisbank*\n\n' + (user.user_knowledge ? user.user_knowledge.slice(0,200)+'...' : 'Leeg — voeg informatie toe over jouw bedrijf, producten of diensten.'),
+    bot.sendMessage(userId, '*Kennisbank*\n\n' + (user.user_knowledge ? user.user_knowledge.slice(0,200)+'...' : 'Leeg -- voeg informatie toe over jouw bedrijf, producten of diensten.'),
       { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
         [{ text: 'Tekst toevoegen',  callback_data: 'myknow_add'   }],
         [{ text: 'PDF uploaden',     callback_data: 'myknow_pdf'   }],
@@ -672,7 +672,7 @@ bot.on('callback_query', async (query) => {
   else if (data === 'history') {
     const hist = await getHistory(userId, 8);
     if (!hist.length) return bot.sendMessage(userId, 'Nog geen concepten gemaakt.', { reply_markup: mainKeyboard(userId) });
-    const text = hist.map((h, i) => (i+1) + '. ' + h.subject + ' — ' + new Date(h.created_at).toLocaleDateString('nl-NL')).join('\n');
+    const text = hist.map((h, i) => (i+1) + '. ' + h.subject + ' -- ' + new Date(h.created_at).toLocaleDateString('nl-NL')).join('\n');
     bot.sendMessage(userId, '*Recente concepten:*\n\n' + text, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'Terug', callback_data: 'home' }]] } });
   }
 
@@ -793,9 +793,9 @@ bot.on('callback_query', async (query) => {
   }
 });
 
-// ════════════════════════════════════════════════════
+// ====================================================
 // BERICHTEN
-// ════════════════════════════════════════════════════
+// ====================================================
 bot.on('message', async (msg) => {
   if (msg.text && msg.text.startsWith('/')) return;
   const { id: userId, first_name } = msg.from;
@@ -806,7 +806,7 @@ bot.on('message', async (msg) => {
   // TOEGANGSCODE CHECK
   if (s.step === 'awaiting_access_code') {
     if (text === ACCESS_CODE) {
-      // Juiste code — markeer als aanvraag ingediend en notificeer admin
+      // Juiste code -- markeer als aanvraag ingediend en notificeer admin
       s.step = 'idle';
       await saveUser(userId, { name: first_name });
       bot.sendMessage(userId, '*Code correct!*\n\nJe aanvraag is ingediend. Je ontvangt een bericht zodra je toegang hebt gekregen.', { parse_mode: 'Markdown' });
@@ -882,7 +882,7 @@ bot.on('message', async (msg) => {
     const parts = text.split('-').map(p => p.trim());
     await saveUser(userId, { vakgebied: parts[0]||text, doel: parts[1]||'' });
     s.step = 'onboard_toon';
-    bot.sendMessage(userId, '*Stap 2 van 4 — Toon*\n\nHoe schrijf jij normaal?',
+    bot.sendMessage(userId, '*Stap 2 van 4 -- Toon*\n\nHoe schrijf jij normaal?',
       { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
         [{ text: 'Formeel (u)', callback_data: 'toon_formeel' }],
         [{ text: 'Informeel (je)', callback_data: 'toon_informeel' }],
@@ -901,7 +901,7 @@ bot.on('message', async (msg) => {
       await saveUser(userId, { style_profiles: JSON.stringify({ default: profile }), credits: user.credits - 3 });
       bot.deleteMessage(userId, load.message_id).catch(()=>{});
       s.step = 'onboard_knowledge';
-      bot.sendMessage(userId, '*Stijl geleerd! (3 berichten gebruikt)*\n\n*Stap 4 van 4 — Eigen kennis*\n\nVoeg informatie toe over je bedrijf, producten of diensten. Ik gebruik dit bij elk antwoord.\n\n_Tik /skip om later toe te voegen._', { parse_mode: 'Markdown' });
+      bot.sendMessage(userId, '*Stijl geleerd! (3 berichten gebruikt)*\n\n*Stap 4 van 4 -- Eigen kennis*\n\nVoeg informatie toe over je bedrijf, producten of diensten. Ik gebruik dit bij elk antwoord.\n\n_Tik /skip om later toe te voegen._', { parse_mode: 'Markdown' });
     } catch(e) { bot.deleteMessage(userId, load.message_id).catch(()=>{}); bot.sendMessage(userId, 'Fout: ' + e.message); }
     return;
   }
@@ -918,7 +918,7 @@ bot.on('message', async (msg) => {
   if (s.step === 'awaiting_style_name') {
     s.trainStyleName = text.toLowerCase().trim();
     s.step = 'awaiting_train';
-    bot.sendMessage(userId, 'Naam: "' + s.trainStyleName + '"\n\nStuur nu 5+ e-mails die jij hebt geschreven. Scheid ze met ——', { parse_mode: 'Markdown' });
+    bot.sendMessage(userId, 'Naam: "' + s.trainStyleName + '"\n\nStuur nu 5+ e-mails die jij hebt geschreven. Scheid ze met ----', { parse_mode: 'Markdown' });
     return;
   }
 
@@ -1068,4 +1068,4 @@ setInterval(async () => {
   }
 }, 24 * 60 * 60 * 1000);
 
-console.log('MailMate v4.1 gestart — Whitelist + Rate limiting actief');
+console.log('MailMate v4.1 gestart -- Whitelist + Rate limiting actief');
