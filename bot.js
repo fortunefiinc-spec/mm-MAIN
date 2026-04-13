@@ -112,12 +112,8 @@ app.post('/api/compose-ab', async (req, res) => {
   try {
     const systemPrompt = await buildSystemPrompt(user, style||'default');
     const [formal, informal] = await Promise.all([
-      callClaude('Schrijf een FORMEEL conceptantwoord (gebruik u):
-
-' + mail_text, systemPrompt),
-      callClaude('Schrijf een INFORMEEL conceptantwoord (gebruik je):
-
-' + mail_text, systemPrompt)
+      callClaude('Schrijf een FORMEEL conceptantwoord (gebruik u):\n\n' + mail_text, systemPrompt),
+      callClaude('Schrijf een INFORMEEL conceptantwoord (gebruik je):\n\n' + mail_text, systemPrompt)
     ]);
     await saveUser(parseInt(telegram_id)||0, { credits: user.credits - 2, concept_count: user.concept_count + 2 });
     res.json({ formal, informal });
@@ -132,12 +128,7 @@ app.post('/api/refine', async (req, res) => {
   if (!concept || !instruction) return res.status(400).json({ error: 'concept en instruction vereist' });
   try {
     const refined = await callClaude(
-      'Pas dit e-mail concept aan op basis van de instructie. Geef ALLEEN het resultaat terug.
-
-Instructie: ' + instruction + '
-
-Concept:
-' + concept,
+      'Pas dit e-mail concept aan op basis van de instructie. Geef ALLEEN het resultaat terug.\n\nInstructie: ' + instruction + '\n\nConcept:\n' + concept,
       'Pas het e-mail concept aan. Geef alleen het resultaat terug.'
     );
     res.json({ refined });
@@ -152,10 +143,7 @@ app.post('/api/train-style', async (req, res) => {
   if (user.credits < 3) return res.status(402).json({ error: 'Minimaal 3 berichten nodig' });
   if (!mails || mails.length < 50) return res.status(400).json({ error: 'Te weinig tekst' });
   try {
-    const profile = await callClaude('Analyseer schrijfstijl. Max 200 woorden: toon, je/u, aanhef, afsluiting, zinslengte.
-
-E-MAILS:
-' + mails);
+    const profile = await callClaude('Analyseer schrijfstijl. Max 200 woorden: toon, je/u, aanhef, afsluiting, zinslengte.\n\nE-MAILS:\n' + mails);
     const profiles = JSON.parse(user.style_profiles || '{"default":""}');
     profiles[name || 'default'] = profile;
     await saveUser(parseInt(telegram_id)||0, { style_profiles: JSON.stringify(profiles), credits: user.credits - 3 });
